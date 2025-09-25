@@ -1,3 +1,4 @@
+use crate::vm::evm::HaltReason;
 // This file is part of Substrate.
 
 // Copyright (C) Parity Technologies (UK) Ltd.
@@ -29,22 +30,22 @@ use core::ops::ControlFlow;
 /// Implements the GASPRICE instruction.
 ///
 /// Gets the gas price of the originating transaction.
-pub fn gasprice<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::GasPrice)?;
+pub fn gasprice<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(RuntimeCosts::GasPrice)?;
 	interpreter.stack.push(U256::from(GAS_PRICE))
 }
 
 /// Implements the ORIGIN instruction.
 ///
 /// Gets the execution origination address.
-pub fn origin<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::Origin)?;
+pub fn origin<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(RuntimeCosts::Origin)?;
 	match interpreter.ext.origin().account_id() {
 		Ok(account_id) => {
 			let address = <E::T as Config>::AddressMapper::to_address(account_id);
 			interpreter.stack.push(address)
 		},
-		Err(_) => ControlFlow::Break(Halt::FatalExternalError),
+		Err(_) => ControlFlow::Break(HaltReason::FatalExternalError.into()),
 	}
 }
 
@@ -52,5 +53,5 @@ pub fn origin<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFl
 ///
 /// EIP-4844: Shard Blob Transactions - gets the hash of a transaction blob.
 pub fn blob_hash<'ext, E: Ext>(_interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	ControlFlow::Break(Halt::NotActivated)
+	ControlFlow::Break(HaltReason::NotActivated.into())
 }

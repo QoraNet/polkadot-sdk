@@ -15,16 +15,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use crate::{
+	precompiles::Token,
 	tracing,
-	vm::{
-		evm::instructions::{instruction_table, InstructionTable},
-		BytecodeType, ExecResult, Ext,
-	},
-	AccountIdOf, CodeInfo, Config, ContractBlob, DispatchError, Error, H256, LOG_TARGET, U256,
+	vm::{evm::instructions::exec_instruction, BytecodeType, ExecResult, Ext},
+	weights::WeightInfo,
+	AccountIdOf, CodeInfo, Config, ContractBlob, DispatchError, Error, Weight, H256, LOG_TARGET,
+	U256,
 };
 use alloc::vec::Vec;
 use core::{convert::Infallible, ops::ControlFlow};
-use revm::{bytecode::Bytecode, primitives::Bytes};
+use revm::{bytecode::Bytecode, interpreter::interpreter_types::Jumps, primitives::Bytes};
 
 #[cfg(feature = "runtime-benchmarks")]
 pub mod instructions;
@@ -32,17 +32,14 @@ pub mod instructions;
 mod instructions;
 
 mod interpreter;
-mod util;
-pub use interpreter::{Halt, Interpreter};
-
-mod memory;
-pub use memory::Memory;
-
-mod stack;
-pub use stack::Stack;
+pub use interpreter::{Halt, HaltReason, Interpreter};
 
 mod ext_bytecode;
 use ext_bytecode::ExtBytecode;
+
+mod memory;
+mod stack;
+mod util;
 
 /// Hard-coded value returned by the EVM `DIFFICULTY` opcode.
 ///
@@ -56,6 +53,17 @@ pub(crate) const DIFFICULTY: u64 = 2500000000000000_u64;
 ///
 /// For `pallet-revive`, this is hardcoded to 0
 pub(crate) const BASE_FEE: U256 = U256::zero();
+
+/// Cost  for a single unit of EVM gas.
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
+pub struct EVMGas(u64);
+
+impl<T: Config> Token<T> for EVMGas {
+	fn weight(&self) -> Weight {
+		let base_cost = T::WeightInfo::evm_opcode(1).saturating_sub(T::WeightInfo::evm_opcode(0));
+		base_cost.saturating_mul(self.0)
+	}
+}
 
 impl<T: Config> ContractBlob<T> {
 	/// Create a new contract from EVM init code.
@@ -121,15 +129,13 @@ impl<T: Config> ContractBlob<T> {
 }
 
 /// Calls the EVM interpreter with the provided bytecode and inputs.
-pub fn call<'a, E: Ext>(bytecode: Bytecode, ext: &'a mut E, input: Vec<u8>) -> ExecResult {
+pub fn call<E: Ext>(bytecode: Bytecode, ext: &mut E, input: Vec<u8>) -> ExecResult {
 	let mut interpreter = Interpreter::new(ExtBytecode::new(bytecode), input, ext);
-	let table = instruction_table::<E>();
-
 	let use_opcode_tracing =
 		tracing::if_tracing(|tracer| tracer.is_opcode_tracing_enabled()).unwrap_or(false);
 
 	let ControlFlow::Break(halt) = if use_opcode_tracing {
-		run_plain_with_tracing(&mut interpreter, &table)
+		run_plain_with_tracing(&mut interpreter)
 	} else {
 		run_plain(&mut interpreter, &table)
 	};
@@ -137,26 +143,19 @@ pub fn call<'a, E: Ext>(bytecode: Bytecode, ext: &'a mut E, input: Vec<u8>) -> E
 	interpreter.into_exec_result(halt)
 }
 
-fn run_plain<'a, E: Ext>(
-	interpreter: &mut Interpreter<E>,
-	table: &InstructionTable<E>,
-) -> ControlFlow<Halt, Infallible> {
-	use revm::interpreter::interpreter_types::Jumps;
+fn run_plain<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt, Infallible> {
 	loop {
 		let opcode = interpreter.bytecode.opcode();
 		interpreter.bytecode.relative_jump(1);
-		table[opcode as usize](interpreter)?;
+		exec_instruction(interpreter, opcode)?;
 	}
 }
 
-fn run_plain_with_tracing<'a, E: Ext>(
-	interpreter: &mut Interpreter<'a, E>,
-	table: &InstructionTable<E>,
+fn run_plain_with_tracing<E: Ext>(
+	interpreter: &mut Interpreter<E>,
 ) -> ControlFlow<Halt, Infallible> {
-	use revm::interpreter::interpreter_types::Jumps;
 	loop {
 		let opcode = interpreter.bytecode.opcode();
-
 		tracing::if_tracing(|tracer| {
 			let gas_before = interpreter.ext.gas_meter().gas_left();
 			tracer.enter_opcode(
@@ -168,15 +167,11 @@ fn run_plain_with_tracing<'a, E: Ext>(
 				interpreter.ext.last_frame_output(),
 			);
 		});
-
 		interpreter.bytecode.relative_jump(1);
-		let res = table[opcode as usize](interpreter);
-
+		exec_instruction(interpreter, opcode)?;
 		tracing::if_tracing(|tracer| {
 			let gas_left = interpreter.ext.gas_meter().gas_left();
 			tracer.exit_opcode(gas_left);
 		});
-
-		res?;
 	}
 }

@@ -1,3 +1,4 @@
+use crate::vm::evm::HaltReason;
 // This file is part of Substrate.
 
 // Copyright (C) Parity Technologies (UK) Ltd.
@@ -218,25 +219,13 @@ impl<T: Config> GasMeter<T> {
 		Ok(ChargedAmount(amount))
 	}
 
-	/// Charge the specified amount of EVM gas.
-	/// This is used for basic opcodes (e.g arithmetic, bitwise, ...) that don't have a dedicated
-	/// benchmark
-
-	pub fn charge_evm_gas(&mut self, gas: u64) -> ControlFlow<Halt> {
-		let base_cost = T::WeightInfo::evm_opcode(1).saturating_sub(T::WeightInfo::evm_opcode(0));
-		self.gas_left = self
-			.gas_left
-			.checked_sub(&base_cost.saturating_mul(gas))
-			.map_or_else(|| ControlFlow::Break(Halt::OutOfGas), ControlFlow::Continue)?;
-
-		ControlFlow::Continue(())
-	}
-
-	/// Charge the specified amount of EVM gas.
-	pub fn charge_evm<Tok: Token<T>>(&mut self, token: Tok) -> ControlFlow<Halt, ChargedAmount> {
-		self.charge_evm_gas(1)?;
+	/// Charge the specified token amount of gas or halt if not enough gas is left.
+	pub fn charge_or_halt<Tok: Token<T>>(
+		&mut self,
+		token: Tok,
+	) -> ControlFlow<Halt, ChargedAmount> {
 		self.charge(token)
-			.map_or_else(|_| ControlFlow::Break(Halt::OutOfGas), ControlFlow::Continue)
+			.map_or_else(|_| ControlFlow::Break(HaltReason::OutOfGas.into()), ControlFlow::Continue)
 	}
 
 	/// Adjust a previously charged amount down to its actual amount.

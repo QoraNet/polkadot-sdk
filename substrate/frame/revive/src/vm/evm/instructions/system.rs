@@ -1,3 +1,4 @@
+use crate::vm::evm::HaltReason;
 // This file is part of Substrate.
 
 // Copyright (C) Parity Technologies (UK) Ltd.
@@ -15,10 +16,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::utility::as_usize_saturated;
 use crate::{
 	address::AddressMapper,
 	vm::{
-		evm::{interpreter::Halt, util::as_usize_or_halt_with, Interpreter},
+		evm::{interpreter::Halt, util::as_usize_or_halt, EVMGas, Interpreter},
 		Ext, RuntimeCosts,
 	},
 	Config, U256,
@@ -36,18 +38,18 @@ pub const KECCAK_EMPTY: [u8; 32] =
 /// Implements the KECCAK256 instruction.
 ///
 /// Computes Keccak-256 hash of memory data.
-pub fn keccak256<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn keccak256<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let ([offset], top) = interpreter.stack.popn_top()?;
-	let len = as_usize_or_halt_with(*top, || Halt::InvalidOperandOOG)?;
+	let len = as_usize_or_halt(*top)?;
 	interpreter
 		.ext
 		.gas_meter_mut()
-		.charge_evm(RuntimeCosts::HashKeccak256(len as u32))?;
+		.charge_or_halt(RuntimeCosts::HashKeccak256(len as u32))?;
 
 	let hash = if len == 0 {
 		H256::from(KECCAK_EMPTY)
 	} else {
-		let from = as_usize_or_halt_with(offset, || Halt::InvalidOperandOOG)?;
+		let from = as_usize_or_halt(offset)?;
 		interpreter.memory.resize(from, len)?;
 		H256::from(keccak_256(interpreter.memory.slice_len(from, len)))
 	};
@@ -58,8 +60,8 @@ pub fn keccak256<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> Contro
 /// Implements the ADDRESS instruction.
 ///
 /// Pushes the current contract's address onto the stack.
-pub fn address<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::Address)?;
+pub fn address<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(RuntimeCosts::Address)?;
 	let address = interpreter.ext.address();
 	interpreter.stack.push(address)
 }
@@ -67,35 +69,35 @@ pub fn address<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlF
 /// Implements the CALLER instruction.
 ///
 /// Pushes the caller's address onto the stack.
-pub fn caller<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::Caller)?;
+pub fn caller<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(RuntimeCosts::Caller)?;
 	match interpreter.ext.caller().account_id() {
 		Ok(account_id) => {
 			let address = <E::T as Config>::AddressMapper::to_address(account_id);
 			interpreter.stack.push(address)
 		},
-		Err(_) => ControlFlow::Break(Halt::FatalExternalError),
+		Err(_) => ControlFlow::Break(HaltReason::FatalExternalError.into()),
 	}
 }
 
 /// Implements the CODESIZE instruction.
 ///
 /// Pushes the size of running contract's bytecode onto the stack.
-pub fn codesize<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm_gas(BASE)?;
+pub fn codesize<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(EVMGas(BASE))?;
 	interpreter.stack.push(U256::from(interpreter.bytecode.len()))
 }
 
 /// Implements the CODECOPY instruction.
 ///
 /// Copies running contract's bytecode to memory.
-pub fn codecopy<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn codecopy<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let [memory_offset, code_offset, len] = interpreter.stack.popn()?;
-	let len = as_usize_or_halt_with(len, || Halt::InvalidOperandOOG)?;
+	let len = as_usize_or_halt(len)?;
 	let Some(memory_offset) = memory_resize(interpreter, memory_offset, len)? else {
 		return ControlFlow::Continue(())
 	};
-	let code_offset = as_usize_saturated!(code_offset);
+	let code_offset = as_usize_saturated(code_offset);
 
 	interpreter.memory.set_data(
 		memory_offset,
@@ -109,11 +111,11 @@ pub fn codecopy<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> Control
 /// Implements the CALLDATALOAD instruction.
 ///
 /// Loads 32 bytes of input data from the specified offset.
-pub fn calldataload<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm_gas(VERYLOW)?;
+pub fn calldataload<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(EVMGas(VERYLOW))?;
 	let ([], offset_ptr) = interpreter.stack.popn_top()?;
 	let mut word = [0u8; 32];
-	let offset = as_usize_saturated!(offset_ptr);
+	let offset = as_usize_saturated(*offset_ptr);
 	let input = &interpreter.input;
 	let input_len = input.len();
 	if offset < input_len {
@@ -128,16 +130,16 @@ pub fn calldataload<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> Con
 /// Implements the CALLDATASIZE instruction.
 ///
 /// Pushes the size of input data onto the stack.
-pub fn calldatasize<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm_gas(BASE)?;
+pub fn calldatasize<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(EVMGas(BASE))?;
 	interpreter.stack.push(U256::from(interpreter.input.len()))
 }
 
 /// Implements the CALLVALUE instruction.
 ///
 /// Pushes the value sent with the current call onto the stack.
-pub fn callvalue<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::ValueTransferred)?;
+pub fn callvalue<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(RuntimeCosts::ValueTransferred)?;
 	let value = interpreter.ext.value_transferred();
 	interpreter.stack.push(value)
 }
@@ -145,37 +147,37 @@ pub fn callvalue<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> Contro
 /// Implements the CALLDATACOPY instruction.
 ///
 /// Copies input data to memory.
-pub fn calldatacopy<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn calldatacopy<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let [memory_offset, data_offset, len] = interpreter.stack.popn()?;
-	let len = as_usize_or_halt_with(len, || Halt::InvalidOperandOOG)?;
+	let len = as_usize_or_halt(len)?;
 
 	let Some(memory_offset) = memory_resize(interpreter, memory_offset, len)? else {
 		return ControlFlow::Continue(());
 	};
 
-	let data_offset = as_usize_saturated!(data_offset);
+	let data_offset = as_usize_saturated(data_offset);
 	interpreter.memory.set_data(memory_offset, data_offset, len, &interpreter.input);
 	ControlFlow::Continue(())
 }
 
 /// EIP-211: New opcodes: RETURNDATASIZE and RETURNDATACOPY
-pub fn returndatasize<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm_gas(BASE)?;
+pub fn returndatasize<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(EVMGas(BASE))?;
 	let return_data_len = interpreter.ext.last_frame_output().data.len();
 	interpreter.stack.push(U256::from(return_data_len))
 }
 
 /// EIP-211: New opcodes: RETURNDATASIZE and RETURNDATACOPY
-pub fn returndatacopy<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn returndatacopy<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let [memory_offset, offset, len] = interpreter.stack.popn()?;
 
-	let len = as_usize_or_halt_with(len, || Halt::InvalidOperandOOG)?;
-	let data_offset = as_usize_saturated!(offset);
+	let len = as_usize_or_halt(len)?;
+	let data_offset = as_usize_saturated(offset);
 
 	// Old legacy behavior is to panic if data_end is out of scope of return buffer.
 	let data_end = data_offset.saturating_add(len);
 	if data_end > interpreter.ext.last_frame_output().data.len() {
-		return ControlFlow::Break(Halt::OutOfOffset);
+		return ControlFlow::Break(HaltReason::OutOfOffset.into());
 	}
 
 	let Some(memory_offset) = memory_resize(interpreter, memory_offset, len)? else {
@@ -194,8 +196,8 @@ pub fn returndatacopy<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> C
 /// Implements the GAS instruction.
 ///
 /// Pushes the amount of remaining gas onto the stack.
-pub fn gas<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::RefTimeLeft)?;
+pub fn gas<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(RuntimeCosts::RefTimeLeft)?;
 	// TODO: This accounts only for 'ref_time' now. It should be fixed to also account for other
 	// costs. See #9577 for more context.
 	let gas = interpreter.ext.gas_meter().gas_left().ref_time();
@@ -213,12 +215,12 @@ pub fn memory_resize<'a, E: Ext>(
 	interpreter
 		.ext
 		.gas_meter_mut()
-		.charge_evm(RuntimeCosts::CopyToContract(len as u32))?;
+		.charge_or_halt(RuntimeCosts::CopyToContract(len as u32))?;
 	if len == 0 {
 		return ControlFlow::Continue(None)
 	}
 
-	let memory_offset = as_usize_or_halt_with(memory_offset, || Halt::InvalidOperandOOG)?;
+	let memory_offset = as_usize_or_halt(memory_offset)?;
 	interpreter.memory.resize(memory_offset, len)?;
 
 	ControlFlow::Continue(Some(memory_offset))

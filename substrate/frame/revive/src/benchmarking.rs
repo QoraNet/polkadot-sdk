@@ -29,7 +29,7 @@ use crate::{
 	storage::WriteOutcome,
 	vm::{
 		evm,
-		evm::{instructions::instruction_table, Interpreter},
+		evm::{instructions::host, Interpreter},
 		pvm,
 	},
 	Pallet as Contracts, *,
@@ -47,7 +47,7 @@ use frame_support::{
 };
 use frame_system::RawOrigin;
 use pallet_revive_uapi::{pack_hi_lo, CallFlags, ReturnErrorCode, StorageFlags};
-use revm::bytecode::{opcode::EXTCODECOPY, Bytecode};
+use revm::bytecode::Bytecode;
 use sp_consensus_aura::AURA_ENGINE_ID;
 use sp_consensus_babe::{
 	digests::{PreDigest, PrimaryPreDigest},
@@ -2409,9 +2409,6 @@ mod benchmarks {
 		let (mut ext, _) = setup.ext();
 		let mut interpreter = Interpreter::new(Default::default(), Default::default(), &mut ext);
 
-		let table = instruction_table::<_>();
-		let extcodecopy_fn = table[EXTCODECOPY as usize];
-
 		// Setup stack for extcodecopy instruction: [address, dest_offset, offset, size]
 		let _ = interpreter.stack.push(U256::from(n));
 		let _ = interpreter.stack.push(U256::from(0u32));
@@ -2421,7 +2418,7 @@ mod benchmarks {
 		let result;
 		#[block]
 		{
-			result = extcodecopy_fn(&mut interpreter);
+			result = host::extcodecopy(&mut interpreter);
 		}
 
 		assert!(result.is_continue());

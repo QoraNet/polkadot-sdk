@@ -1,3 +1,4 @@
+use crate::vm::evm::HaltReason;
 // This file is part of Substrate.
 
 // Copyright (C) Parity Technologies (UK) Ltd.
@@ -20,7 +21,7 @@ mod call_helpers;
 use super::utility::IntoAddress;
 use crate::{
 	vm::{
-		evm::{interpreter::Halt, util::as_usize_or_halt_with, Interpreter},
+		evm::{interpreter::Halt, util::as_usize_or_halt, Interpreter},
 		Ext, RuntimeCosts,
 	},
 	Code, Pallet, Weight, H160, U256,
@@ -35,20 +36,20 @@ use revm::interpreter::interpreter_action::CallScheme;
 /// Implements the CREATE/CREATE2 instruction.
 ///
 /// Creates a new contract with provided bytecode.
-pub fn create<'ext, const IS_CREATE2: bool, E: Ext>(
-	interpreter: &mut Interpreter<'ext, E>,
+pub fn create<const IS_CREATE2: bool, E: Ext>(
+	interpreter: &mut Interpreter<E>,
 ) -> ControlFlow<Halt> {
 	if interpreter.ext.is_read_only() {
-		return ControlFlow::Break(Halt::StateChangeDuringStaticCall);
+		return ControlFlow::Break(HaltReason::StateChangeDuringStaticCall.into());
 	}
 
 	let [value, code_offset, len] = interpreter.stack.popn()?;
-	let len = as_usize_or_halt_with(len, || Halt::InvalidOperandOOG)?;
+	let len = as_usize_or_halt(len)?;
 
 	// TODO: We do not charge for the new code in storage. When implementing the new gas:
 	// Introduce EthInstantiateWithCode, which shall charge gas based on the code length.
 	// See #9577 for more context.
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::Instantiate {
+	interpreter.ext.charge_or_halt(RuntimeCosts::Instantiate {
 		input_data_len: len as u32, // We charge for initcode execution
 		balance_transfer: Pallet::<E::T>::has_balance(value),
 		dust_transfer: Pallet::<E::T>::has_dust(value),
@@ -58,10 +59,10 @@ pub fn create<'ext, const IS_CREATE2: bool, E: Ext>(
 	if len != 0 {
 		// EIP-3860: Limit initcode
 		if len > revm::primitives::eip3860::MAX_INITCODE_SIZE {
-			return ControlFlow::Break(Halt::CreateInitCodeSizeLimit);
+			return ControlFlow::Break(HaltReason::CreateInitCodeSizeLimit.into());
 		}
 
-		let code_offset = as_usize_or_halt_with(code_offset, || Halt::InvalidOperandOOG)?;
+		let code_offset = as_usize_or_halt(code_offset)?;
 		interpreter.memory.resize(code_offset, len)?;
 		code = interpreter.memory.slice_len(code_offset, len).to_vec();
 	}
@@ -88,7 +89,10 @@ pub fn create<'ext, const IS_CREATE2: bool, E: Ext>(
 			if return_value.did_revert() {
 				// Contract creation reverted — return data must be propagated
 				let len = return_value.data.len() as u32;
-				interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::CopyToContract(len))?;
+				interpreter
+					.ext
+					.gas_meter_mut()
+					.charge_or_halt(RuntimeCosts::CopyToContract(len))?;
 				interpreter.stack.push(U256::zero())
 			} else {
 				// Otherwise clear it. Note that RETURN opcode should abort.
@@ -106,7 +110,7 @@ pub fn create<'ext, const IS_CREATE2: bool, E: Ext>(
 /// Implements the CALL instruction.
 ///
 /// Message call with value transfer to another account.
-pub fn call<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn call<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let [local_gas_limit, to, value] = interpreter.stack.popn()?;
 	let to = to.into_address();
 	// TODO: Max gas limit is not possible in a real Ethereum situation. This issue will be
@@ -115,7 +119,7 @@ pub fn call<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow
 
 	let has_transfer = !value.is_zero();
 	if interpreter.ext.is_read_only() && has_transfer {
-		return ControlFlow::Break(Halt::CallNotAllowedInsideStatic);
+		return ControlFlow::Break(HaltReason::CallNotAllowedInsideStatic.into());
 	}
 
 	let (input, return_memory_offset) = get_memory_input_and_out_ranges(interpreter)?;
@@ -139,14 +143,14 @@ pub fn call<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow
 ///
 /// Isn't supported yet: [`solc` no longer emits it since Solidity v0.3.0 in 2016]
 /// (https://soliditylang.org/blog/2016/03/11/solidity-0.3.0-release-announcement/).
-pub fn call_code<'ext, E: Ext>(_interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	ControlFlow::Break(Halt::NotActivated)
+pub fn call_code<E: Ext>(_interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	ControlFlow::Break(HaltReason::NotActivated.into())
 }
 
 /// Implements the DELEGATECALL instruction.
 ///
 /// Message call with alternative account's code but same sender and value.
-pub fn delegate_call<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn delegate_call<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let [local_gas_limit, to] = interpreter.stack.popn()?;
 	let to = to.into_address();
 	// TODO: Max gas limit is not possible in a real Ethereum situation. This issue will be
@@ -172,7 +176,7 @@ pub fn delegate_call<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> Co
 /// Implements the STATICCALL instruction.
 ///
 /// Static message call (cannot modify state).
-pub fn static_call<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn static_call<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let [local_gas_limit, to] = interpreter.stack.popn()?;
 	let to = to.into_address();
 	// TODO: Max gas limit is not possible in a real Ethereum situation. This issue will be
@@ -231,7 +235,7 @@ fn run_call<'a, E: Ext>(
 			interpreter
 				.ext
 				.gas_meter_mut()
-				.charge_evm(RuntimeCosts::CopyToContract(target_len as u32))?;
+				.charge_or_halt(RuntimeCosts::CopyToContract(target_len as u32))?;
 
 			let return_value = interpreter.ext.last_frame_output();
 			let return_data = &return_value.data;

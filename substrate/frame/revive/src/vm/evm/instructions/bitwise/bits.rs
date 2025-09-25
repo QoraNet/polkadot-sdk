@@ -41,24 +41,21 @@ impl Bits for U256 {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use core::cmp::min;
+	use proptest::proptest;
 
-	// #[test]
-	// fn test_arithmetic_shr() {
-	// use proptest::proptest;
-	// use core::cmp::min;
-	// 	proptest!(|(limbs: [u64; 4], shift in 0..=258)| {
-	// 		let value = U256(limbs);
-	// 		let shifted = value.arithmetic_shr(shift);
-	// 		let sign_bit = value.bit(255);
-	// 		if sign_bit {
-	// 			// For negative numbers, check that the sign is preserved
-	// 			assert_eq!(shifted.leading_ones(), min(256, shift));
-	// 		} else {
-	// 			// For positive numbers, should behave like logical shift
-	// 			assert_eq!(shifted.leading_zeros(), min(256, value.leading_zeros() + shift));
-	// 		}
-	// 	});
-	// }
+	#[test]
+	fn test_arithmetic_shr() {
+		let leading_ones = |x: U256| (!x).leading_zeros() as usize;
+		proptest!(|(limbs: [u64; 4], shift in 0usize..=258)| {
+			let value = U256(limbs);
+			let shifted = value.arithmetic_shr(shift);
+			assert_eq!(leading_ones(shifted), match leading_ones(value) {
+				0 => 0,
+				n => min(256, n + shift)
+			});
+		});
+	}
 
 	#[test]
 	fn test_arithmetic_shr_positive() {

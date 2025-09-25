@@ -1,3 +1,4 @@
+use crate::vm::evm::HaltReason;
 // This file is part of Substrate.
 
 // Copyright (C) Parity Technologies (UK) Ltd.
@@ -19,7 +20,7 @@ use crate::{
 	vec::Vec,
 	vm::{
 		evm::{
-			instructions::utility::IntoAddress, interpreter::Halt, util::as_usize_or_halt_with,
+			instructions::utility::IntoAddress, interpreter::Halt, util::as_usize_or_halt,
 			Interpreter,
 		},
 		Ext,
@@ -31,16 +32,16 @@ use core::ops::ControlFlow;
 /// Implements the BALANCE instruction.
 ///
 /// Gets the balance of the given account.
-pub fn balance<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::BalanceOf)?;
+pub fn balance<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(RuntimeCosts::BalanceOf)?;
 	let ([], top) = interpreter.stack.popn_top()?;
 	*top = interpreter.ext.balance_of(&top.into_address());
 	ControlFlow::Continue(())
 }
 
 /// EIP-1884: Repricing for trie-size-dependent opcodes
-pub fn selfbalance<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::Balance)?;
+pub fn selfbalance<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(RuntimeCosts::Balance)?;
 	let balance = interpreter.ext.balance();
 	interpreter.stack.push(balance)
 }
@@ -48,18 +49,18 @@ pub fn selfbalance<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> Cont
 /// Implements the EXTCODESIZE instruction.
 ///
 /// Gets the size of an account's code.
-pub fn extcodesize<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn extcodesize<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let ([], top) = interpreter.stack.popn_top()?;
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::CodeSize)?;
+	interpreter.ext.charge_or_halt(RuntimeCosts::CodeSize)?;
 	let code_size = interpreter.ext.code_size(&top.into_address());
 	*top = U256::from(code_size);
 	ControlFlow::Continue(())
 }
 
 /// EIP-1052: EXTCODEHASH opcode
-pub fn extcodehash<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn extcodehash<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let ([], top) = interpreter.stack.popn_top()?;
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::CodeHash)?;
+	interpreter.ext.charge_or_halt(RuntimeCosts::CodeHash)?;
 	let code_hash = interpreter.ext.code_hash(&top.into_address());
 	*top = U256::from_big_endian(&code_hash.0);
 	ControlFlow::Continue(())
@@ -68,21 +69,21 @@ pub fn extcodehash<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> Cont
 /// Implements the EXTCODECOPY instruction.
 ///
 /// Copies a portion of an account's code to memory.
-pub fn extcodecopy<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn extcodecopy<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let [address, memory_offset, code_offset, len] = interpreter.stack.popn()?;
-	let len = as_usize_or_halt_with(len, || Halt::InvalidOperandOOG)?;
+	let len = as_usize_or_halt(len)?;
 
 	interpreter
 		.ext
 		.gas_meter_mut()
-		.charge_evm(RuntimeCosts::ExtCodeCopy(len as u32))?;
+		.charge_or_halt(RuntimeCosts::ExtCodeCopy(len as u32))?;
 	let address = address.into_address();
 
 	if len == 0 {
 		return ControlFlow::Continue(());
 	}
-	let memory_offset = as_usize_or_halt_with(memory_offset, || Halt::InvalidOperandOOG)?;
-	let code_offset = as_usize_or_halt_with(code_offset, || Halt::InvalidOperandOOG)?;
+	let memory_offset = as_usize_or_halt(memory_offset)?;
+	let code_offset = as_usize_or_halt(code_offset)?;
 
 	interpreter.memory.resize(memory_offset, len)?;
 
@@ -95,8 +96,8 @@ pub fn extcodecopy<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> Cont
 /// Implements the BLOCKHASH instruction.
 ///
 /// Gets the hash of one of the 256 most recent complete blocks.
-pub fn blockhash<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::BlockHash)?;
+pub fn blockhash<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(RuntimeCosts::BlockHash)?;
 	let ([], number) = interpreter.stack.popn_top()?;
 
 	// blockhash should push zero if number is not within valid range.
@@ -111,17 +112,17 @@ pub fn blockhash<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> Contro
 /// Implements the SLOAD instruction.
 ///
 /// Loads a word from storage.
-pub fn sload<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn sload<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let ([], index) = interpreter.stack.popn_top()?;
 	// NB: SLOAD loads 32 bytes from storage (i.e. U256).
-	interpreter.ext.gas_meter_mut().charge_evm(RuntimeCosts::GetStorage(32))?;
+	interpreter.ext.charge_or_halt(RuntimeCosts::GetStorage(32))?;
 	let key = Key::Fix(index.to_big_endian());
 	let value = interpreter.ext.get_storage(&key);
 
 	*index = if let Some(storage_value) = value {
 		// sload always reads a word
 		let Ok::<[u8; 32], _>(bytes) = storage_value.try_into() else {
-			return ControlFlow::Break(Halt::FatalExternalError);
+			return ControlFlow::Break(HaltReason::FatalExternalError.into());
 		};
 		U256::from_big_endian(&bytes)
 	} else {
@@ -144,13 +145,13 @@ fn store_helper<'ext, E: Ext>(
 	let [index, value] = interpreter.stack.popn()?;
 
 	// Charge gas before set_storage and later adjust it down to the true gas cost
-	let charged_amount = interpreter.ext.gas_meter_mut().charge_evm(cost_before)?;
+	let charged_amount = interpreter.ext.charge_or_halt(cost_before)?;
 	let key = Key::Fix(index.to_big_endian());
 	let take_old = false;
 	let Ok(write_outcome) =
 		set_function(interpreter.ext, &key, Some(value.to_big_endian().to_vec()), take_old)
 	else {
-		return ControlFlow::Break(Halt::FatalExternalError);
+		return ControlFlow::Break(HaltReason::FatalExternalError.into());
 	};
 
 	interpreter
@@ -164,7 +165,7 @@ fn store_helper<'ext, E: Ext>(
 /// Implements the SSTORE instruction.
 ///
 /// Stores a word to storage.
-pub fn sstore<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn sstore<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	store_helper(
 		interpreter,
 		RuntimeCosts::SetStorage { new_bytes: 32, old_bytes: 0 },
@@ -175,7 +176,7 @@ pub fn sstore<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFl
 
 /// EIP-1153: Transient storage opcodes
 /// Store value to transient storage
-pub fn tstore<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn tstore<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	store_helper(
 		interpreter,
 		RuntimeCosts::SetTransientStorage { new_bytes: 32, old_bytes: 0 },
@@ -186,12 +187,12 @@ pub fn tstore<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFl
 
 /// EIP-1153: Transient storage opcodes
 /// Load value from transient storage
-pub fn tload<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn tload<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let ([], index) = interpreter.stack.popn_top()?;
 	interpreter
 		.ext
 		.gas_meter_mut()
-		.charge_evm(RuntimeCosts::GetTransientStorage(32))?;
+		.charge_or_halt(RuntimeCosts::GetTransientStorage(32))?;
 
 	let key = Key::Fix(index.to_big_endian());
 	let bytes = interpreter.ext.get_transient_storage(&key);
@@ -199,11 +200,11 @@ pub fn tload<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlo
 	*index = if let Some(storage_value) = bytes {
 		if storage_value.len() != 32 {
 			// tload always reads a word
-			return ControlFlow::Break(Halt::FatalExternalError);
+			return ControlFlow::Break(HaltReason::FatalExternalError.into());
 		}
 
 		let Ok::<[u8; 32], _>(bytes) = storage_value.try_into() else {
-			return ControlFlow::Break(Halt::FatalExternalError);
+			return ControlFlow::Break(HaltReason::FatalExternalError.into());
 		};
 		U256::from_big_endian(&bytes)
 	} else {
@@ -224,24 +225,24 @@ pub fn log<'ext, const N: usize, E: Ext>(
 	}
 
 	let [offset, len] = interpreter.stack.popn()?;
-	let len = as_usize_or_halt_with(len, || Halt::InvalidOperandOOG)?;
+	let len = as_usize_or_halt(len)?;
 	if len as u32 > interpreter.ext.max_value_size() {
-		return ControlFlow::Break(Halt::InvalidOperandOOG);
+		return ControlFlow::Break(HaltReason::InvalidOperandOOG.into());
 	}
 
 	interpreter
 		.ext
 		.gas_meter_mut()
-		.charge_evm(RuntimeCosts::DepositEvent { num_topic: N as u32, len: len as u32 })?;
+		.charge_or_halt(RuntimeCosts::DepositEvent { num_topic: N as u32, len: len as u32 })?;
 	let data = if len == 0 {
 		Vec::new()
 	} else {
-		let offset = as_usize_or_halt_with(offset, || Halt::InvalidOperandOOG)?;
+		let offset = as_usize_or_halt(offset)?;
 		interpreter.memory.resize(offset, len)?;
 		interpreter.memory.slice(offset..offset + len).to_vec()
 	};
 	if interpreter.stack.len() < N {
-		return ControlFlow::Break(Halt::StackUnderflow);
+		return ControlFlow::Break(HaltReason::StackUnderflow.into());
 	}
 	let topics = interpreter.stack.popn::<N>()?;
 	let topics = topics.into_iter().map(|v| sp_core::H256::from(v.to_big_endian())).collect();
@@ -255,5 +256,5 @@ pub fn log<'ext, const N: usize, E: Ext>(
 /// Halt execution and register account for later deletion.
 pub fn selfdestruct<'ext, E: Ext>(_interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
 	// TODO: for now this instruction is not supported
-	ControlFlow::Break(Halt::NotActivated)
+	ControlFlow::Break(HaltReason::NotActivated.into())
 }

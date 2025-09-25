@@ -17,7 +17,7 @@
 
 //! Custom EVM memory implementation using standard Vec<u8>
 
-use crate::vm::evm::Halt;
+use crate::vm::evm::{Halt, HaltReason};
 use alloc::vec::Vec;
 use core::ops::{ControlFlow, Range};
 
@@ -32,11 +32,12 @@ impl Memory {
 	}
 
 	/// Get a slice of memory for the given range
-	/// TODO same as slice_mut?
+	///
+	/// # Panics
+	///
+	/// Panics on out of bounds.
 	pub fn slice(&self, range: Range<usize>) -> &[u8] {
-		let end = core::cmp::min(range.end, self.0.len());
-		let start = core::cmp::min(range.start, end);
-		&self.0[start..end]
+		&self.0[range]
 	}
 
 	/// Returns a byte slice of the memory region at the given offset.
@@ -46,10 +47,6 @@ impl Memory {
 	/// Panics on out of bounds.
 	pub fn slice_mut(&mut self, offset: usize, len: usize) -> &mut [u8] {
 		&mut self.0[offset..offset + len]
-	}
-
-	pub fn get_word(&self, offset: usize) -> &[u8; 32] {
-		self.0[offset..offset + 32].try_into().unwrap()
 	}
 
 	/// Get the current memory size in bytes
@@ -63,7 +60,7 @@ impl Memory {
 		let target_len = revm::interpreter::num_words(offset.saturating_add(len)) * 32;
 		if target_len as u32 > crate::limits::code::BASELINE_MEMORY_LIMIT {
 			log::debug!(target: crate::LOG_TARGET, "check memory bounds failed: offset={offset} target_len={target_len} current_len={current_len}");
-			return ControlFlow::Break(Halt::MemoryOOG);
+			return ControlFlow::Break(HaltReason::MemoryOOG.into());
 		}
 
 		if target_len > current_len {

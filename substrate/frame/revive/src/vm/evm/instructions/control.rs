@@ -1,3 +1,4 @@
+use crate::vm::evm::HaltReason;
 // This file is part of Substrate.
 
 // Copyright (C) Parity Technologies (UK) Ltd.
@@ -17,7 +18,11 @@
 
 use crate::{
 	vm::{
-		evm::{interpreter::Halt, util::as_usize_or_halt_with, Interpreter},
+		evm::{
+			interpreter::Halt,
+			util::{as_usize_or_halt, as_usize_or_halt_with},
+			EVMGas, Interpreter,
+		},
 		Ext,
 	},
 	U256,
@@ -31,8 +36,8 @@ use revm::interpreter::{
 /// Implements the JUMP instruction.
 ///
 /// Unconditional jump to a valid destination.
-pub fn jump<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm_gas(MID)?;
+pub fn jump<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(EVMGas(MID))?;
 	let [target] = interpreter.stack.popn()?;
 	jump_inner(interpreter, target)?;
 	ControlFlow::Continue(())
@@ -41,8 +46,8 @@ pub fn jump<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow
 /// Implements the JUMPI instruction.
 ///
 /// Conditional jump to a valid destination if condition is true.
-pub fn jumpi<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm_gas(HIGH)?;
+pub fn jumpi<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(EVMGas(HIGH))?;
 	let [target, cond] = interpreter.stack.popn()?;
 
 	if !cond.is_zero() {
@@ -55,11 +60,11 @@ pub fn jumpi<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlo
 /// Internal helper function for jump operations.
 ///
 /// Validates jump target and performs the actual jump.
-fn jump_inner<E: Ext>(interpreter: &mut Interpreter<'_, E>, target: U256) -> ControlFlow<Halt> {
-	let target = as_usize_or_halt_with(target, || Halt::InvalidJump)?;
+fn jump_inner<E: Ext>(interpreter: &mut Interpreter<E>, target: U256) -> ControlFlow<Halt> {
+	let target = as_usize_or_halt_with(target, || HaltReason::InvalidJump.into())?;
 
 	if !interpreter.bytecode.is_valid_legacy_jump(target) {
-		return ControlFlow::Break(Halt::InvalidJump);
+		return ControlFlow::Break(HaltReason::InvalidJump.into());
 	}
 	// SAFETY: `is_valid_jump` ensures that `dest` is in bounds.
 	interpreter.bytecode.absolute_jump(target);
@@ -69,16 +74,16 @@ fn jump_inner<E: Ext>(interpreter: &mut Interpreter<'_, E>, target: U256) -> Con
 /// Implements the JUMPDEST instruction.
 ///
 /// Marks a valid destination for jump operations.
-pub fn jumpdest<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm_gas(JUMPDEST)?;
+pub fn jumpdest<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(EVMGas(JUMPDEST))?;
 	ControlFlow::Continue(())
 }
 
 /// Implements the PC instruction.
 ///
 /// Pushes the current program counter onto the stack.
-pub fn pc<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	interpreter.ext.gas_meter_mut().charge_evm_gas(BASE)?;
+pub fn pc<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	interpreter.ext.charge_or_halt(EVMGas(BASE))?;
 	// - 1 because we have already advanced the instruction pointer in `Interpreter::step`
 	interpreter.stack.push(U256::from(interpreter.bytecode.pc() - 1))?;
 	ControlFlow::Continue(())
@@ -89,17 +94,17 @@ pub fn pc<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<H
 ///
 /// Handles memory data retrieval and sets the return action.
 fn return_inner<E: Ext>(
-	interpreter: &mut Interpreter<'_, E>,
+	interpreter: &mut Interpreter<E>,
 	halt: impl Fn(Vec<u8>) -> Halt,
 ) -> ControlFlow<Halt> {
 	// Zero gas cost
 	let [offset, len] = interpreter.stack.popn()?;
-	let len = as_usize_or_halt_with(len, || Halt::InvalidOperandOOG)?;
+	let len = as_usize_or_halt(len)?;
 
 	// Important: Offset must be ignored if len is zeros
 	let mut output = Default::default();
 	if len != 0 {
-		let offset = as_usize_or_halt_with(offset, || Halt::InvalidOperandOOG)?;
+		let offset = as_usize_or_halt(offset)?;
 		interpreter.memory.resize(offset, len)?;
 		output = interpreter.memory.slice_len(offset, len).to_vec()
 	}
@@ -110,27 +115,27 @@ fn return_inner<E: Ext>(
 /// Implements the RETURN instruction.
 ///
 /// Halts execution and returns data from memory.
-pub fn ret<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn ret<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	return_inner(interpreter, Halt::Return)
 }
 
 /// EIP-140: REVERT instruction
-pub fn revert<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn revert<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	return_inner(interpreter, Halt::Revert)
 }
 
 /// Stop opcode. This opcode halts the execution.
-pub fn stop<'ext, E: Ext>(_interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn stop<E: Ext>(_interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	ControlFlow::Break(Halt::Stop)
 }
 
 /// Invalid opcode. This opcode halts the execution.
-pub fn invalid<'ext, E: Ext>(interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
+pub fn invalid<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	interpreter.ext.gas_meter_mut().consume_all();
-	ControlFlow::Break(Halt::InvalidFEOpcode)
+	ControlFlow::Break(HaltReason::InvalidFEOpcode.into())
 }
 
 /// Unknown opcode. This opcode halts the execution.
-pub fn unknown<'ext, E: Ext>(_interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
-	ControlFlow::Break(Halt::OpcodeNotFound)
+pub fn unknown<E: Ext>(_interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
+	ControlFlow::Break(HaltReason::OpcodeNotFound.into())
 }

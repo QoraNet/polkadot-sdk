@@ -17,6 +17,18 @@
 
 use sp_core::{H160, U256};
 
+/// Converts a `U256` value to a `usize`, saturating to `MAX` if the value is too large.
+pub fn as_usize_saturated(v: U256) -> usize {
+	match &v.0 {
+		x =>
+			if (x[1] == 0) & (x[2] == 0) & (x[3] == 0) {
+				usize::try_from(x[0]).unwrap_or(usize::MAX)
+			} else {
+				usize::MAX
+			},
+	}
+}
+
 /// Pushes an arbitrary length slice of bytes onto the stack, padding the last word with zeros
 /// if necessary.
 ///
