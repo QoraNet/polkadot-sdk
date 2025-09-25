@@ -134,19 +134,7 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 		}
 
 		// Extract stack data if enabled
-		let stack_data = if !self.config.disable_stack {
-			let stack_values = &stack.0;
-			let mut stack_bytes = Vec::new();
-
-			for value in stack_values.iter() {
-				let bytes = value.to_big_endian().to_vec();
-				stack_bytes.push(crate::evm::Bytes(bytes));
-			}
-
-			stack_bytes
-		} else {
-			Vec::new()
-		};
+		let stack_data = if !self.config.disable_stack { stack.0.clone() } else { Vec::new() };
 
 		// Extract memory data if enabled
 		let memory_data = if self.config.enable_memory {
@@ -192,13 +180,11 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 			pc,
 			op: opcode,
 			gas: gas_before_mapped,
-			gas_cost: sp_core::U256::zero(), // Will be set in exit_opcode
 			depth: self.depth,
 			stack: stack_data,
 			memory: memory_data,
-			storage: None,
 			return_data,
-			error: None,
+			..Default::default()
 		};
 
 		self.pending_step = Some(step);
@@ -283,7 +269,7 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 
 			// Set storage on the pending step
 			if let Some(ref mut step) = self.pending_step {
-				step.storage = Some(storage.clone());
+				step.storage = storage.clone();
 			}
 		}
 	}
@@ -303,7 +289,7 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 
 			// Set storage on the pending step
 			if let Some(ref mut step) = self.pending_step {
-				step.storage = Some(storage.clone());
+				step.storage = storage.clone();
 			}
 		}
 	}

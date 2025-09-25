@@ -412,7 +412,9 @@ impl<Gas: Default> Default for OpcodeTrace<Gas> {
 
 /// A single opcode execution step.
 /// This matches Geth's structLog format exactly.
-#[derive(TypeInfo, Encode, Decode, Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(
+	TypeInfo, Default, Encode, Decode, Serialize, Deserialize, Clone, Debug, Eq, PartialEq,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct OpcodeStep<Gas = U256> {
 	/// The program counter.
@@ -427,14 +429,13 @@ pub struct OpcodeStep<Gas = U256> {
 	/// Current call depth.
 	pub depth: u32,
 	/// EVM stack contents.
-	#[serde(serialize_with = "serialize_stack_minimal")]
-	pub stack: Vec<Bytes>,
+	pub stack: Vec<U256>,
 	/// EVM memory contents.
 	#[serde(skip_serializing_if = "Vec::is_empty", serialize_with = "serialize_memory_no_prefix")]
 	pub memory: Vec<Bytes>,
 	/// Contract storage changes.
-	#[serde(skip_serializing_if = "Option::is_none")]
-	pub storage: Option<alloc::collections::BTreeMap<Bytes, Bytes>>,
+	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
+	pub storage: BTreeMap<Bytes, Bytes>,
 	/// Return data from last frame output.
 	#[serde(skip_serializing_if = "Bytes::is_empty")]
 	pub return_data: Bytes,
@@ -612,7 +613,7 @@ fn get_opcode_name(opcode: u8) -> &'static str {
 }
 
 /// Get opcode byte from name string
-fn get_opcode_byte(name: &str) -> Option<u8> {
+pub fn get_opcode_byte(name: &str) -> Option<u8> {
 	use revm::bytecode::opcode::*;
 	macro_rules! opcode_byte_match {
         ($($op:ident),*) => {
@@ -862,15 +863,6 @@ pub struct TransactionTrace {
 	/// The trace of the transaction.
 	#[serde(rename = "result")]
 	pub trace: Trace,
-}
-
-/// Serialize stack values using minimal hex format (like Geth)
-fn serialize_stack_minimal<S>(stack: &Vec<Bytes>, serializer: S) -> Result<S::Ok, S::Error>
-where
-	S: serde::Serializer,
-{
-	let minimal_values: Vec<String> = stack.iter().map(|bytes| bytes.to_short_hex()).collect();
-	minimal_values.serialize(serializer)
 }
 
 /// Serialize memory values without "0x" prefix (like Geth)

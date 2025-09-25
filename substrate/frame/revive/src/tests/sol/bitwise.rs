@@ -50,23 +50,3 @@ fn bitwise_works() {
 		});
 	}
 }
-
-#[test]
-fn test_me() {
-	use crate::tests::sol::revm_tracing::RevmTracer;
-	use alloy_core::sol_types::SolInterface;
-	use revm::{context::TxEnv, context_interface::TransactTo, primitives::Bytes};
-
-	let (code, _) = compile_module_with_type("Bitwise", FixtureType::Solc).unwrap();
-	let mut tracer = RevmTracer::default();
-	let addr = tracer.deploy(TxEnv { data: Bytes::from(code), ..Default::default() });
-
-	let traces = tracer.call(TxEnv {
-		kind: TransactTo::Call(addr),
-		data: Bitwise::BitwiseCalls::testBitwise(Bitwise::testBitwiseCall {})
-			.abi_encode()
-			.into(),
-		..Default::default()
-	});
-	std::fs::write("/tmp/trace_ok.json", serde_json::to_string_pretty(&traces).unwrap()).unwrap();
-}

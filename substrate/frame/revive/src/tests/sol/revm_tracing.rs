@@ -1,3 +1,8 @@
+use crate::{
+	evm::{get_opcode_byte, Bytes, OpcodeStep, OpcodeTrace, OpcodeTracerConfig},
+	U256,
+};
+use alloy_core::hex;
 use alloy_rpc_types_trace::geth::{DefaultFrame, GethDefaultTracingOptions};
 use revm::{
 	context::{ContextTr, TxEnv},
@@ -7,14 +12,57 @@ use revm::{
 	primitives::Address,
 	Context, ExecuteCommitEvm, InspectEvm, MainBuilder, MainContext,
 };
+
 use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
 
 #[derive(Debug, Default, Clone)]
 pub struct RevmTracer {
 	db: CacheDB<EmptyDB>,
+	inspector: TracingInspector,
+}
+
+impl<Gas: Default> From<DefaultFrame> for OpcodeTrace<Gas> {
+	fn from(frame: DefaultFrame) -> Self {
+		let mut struct_logs = Vec::with_capacity(frame.struct_logs.len());
+		for log in frame.struct_logs {
+			struct_logs.push(OpcodeStep {
+				pc: log.pc,
+				op: get_opcode_byte(&log.op).unwrap_or_default(),
+				depth: log.depth as u32,
+				error: log.error,
+				stack: log.stack.unwrap_or_default().iter().map(|s| U256(s.into_limbs())).collect(),
+				return_data: log.return_data.unwrap_or_default().0.to_vec().into(),
+				memory: log
+					.memory
+					.unwrap_or_default()
+					.iter()
+					.map(|m| Bytes(hex::decode(m).unwrap_or_default()))
+					.collect(),
+				storage: log
+					.storage
+					.unwrap_or_default()
+					.iter()
+					.map(|(k, v)| (Bytes(k.0.to_vec()), Bytes(v.0.to_vec())))
+					.collect(),
+				..Default::default()
+			});
+		}
+		Self {
+			struct_logs,
+			failed: frame.failed,
+			return_value: frame.return_value.to_vec().into(),
+			..Default::default()
+		}
+	}
 }
 
 impl RevmTracer {
+	pub fn new(config: OpcodeTracerConfig) -> Self {
+		let inspector =
+			TracingInspector::new(TracingInspectorConfig::from_geth_config(&config.into()));
+		Self { db: Default::default(), inspector }
+	}
+
 	fn get_nonce(&self, address: Address) -> u64 {
 		match self.db.basic_ref(address) {
 			Ok(Some(account_info)) => account_info.nonce,
@@ -58,5 +106,15 @@ impl RevmTracer {
 			);
 
 		trace
+	}
+}
+
+impl From<OpcodeTracerConfig> for GethDefaultTracingOptions {
+	fn from(config: OpcodeTracerConfig) -> Self {
+		GethDefaultTracingOptions::default()
+			.with_enable_memory(config.enable_memory)
+			.with_disable_stack(config.disable_stack)
+			.with_disable_stack(config.disable_stack)
+			.with_enable_return_data(config.enable_return_data)
 	}
 }

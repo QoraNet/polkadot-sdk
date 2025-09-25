@@ -38,7 +38,11 @@ mod ext_bytecode;
 use ext_bytecode::ExtBytecode;
 
 mod memory;
+pub use memory::Memory;
+
 mod stack;
+pub use stack::Stack;
+
 mod util;
 
 /// Hard-coded value returned by the EVM `DIFFICULTY` opcode.
@@ -137,7 +141,7 @@ pub fn call<E: Ext>(bytecode: Bytecode, ext: &mut E, input: Vec<u8>) -> ExecResu
 	let ControlFlow::Break(halt) = if use_opcode_tracing {
 		run_plain_with_tracing(&mut interpreter)
 	} else {
-		run_plain(&mut interpreter, &table)
+		run_plain(&mut interpreter)
 	};
 
 	interpreter.into_exec_result(halt)
@@ -168,10 +172,11 @@ fn run_plain_with_tracing<E: Ext>(
 			);
 		});
 		interpreter.bytecode.relative_jump(1);
-		exec_instruction(interpreter, opcode)?;
+		let res = exec_instruction(interpreter, opcode);
 		tracing::if_tracing(|tracer| {
 			let gas_left = interpreter.ext.gas_meter().gas_left();
 			tracer.exit_opcode(gas_left);
 		});
+		res?;
 	}
 }

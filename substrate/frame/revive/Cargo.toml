@@ -79,9 +79,6 @@ proptest = { workspace = true }
 sp-keystore = { workspace = true, default-features = true }
 sp-tracing = { workspace = true, default-features = true }
 
-
-proptest = "1"
-
 [features]
 default = ["std"]
 std = [

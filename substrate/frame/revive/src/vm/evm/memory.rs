@@ -49,6 +49,11 @@ impl Memory {
 		&mut self.0[offset..offset + len]
 	}
 
+	/// Get a 32-byte word from memory at the given offset
+	pub fn get_word(&self, offset: usize) -> &[u8; 32] {
+		self.0[offset..offset + 32].try_into().unwrap()
+	}
+
 	/// Get the current memory size in bytes
 	pub fn size(&self) -> usize {
 		self.0.len()
