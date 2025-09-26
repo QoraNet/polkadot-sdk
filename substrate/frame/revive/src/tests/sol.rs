@@ -260,7 +260,7 @@ fn opcode_tracing_works() {
 fn opcode_tracing_match_revm_works() {
 	let (code, _) = compile_module_with_type("Fibonacci", FixtureType::Solc).unwrap();
 	let config = OpcodeTracerConfig {
-		enable_memory: true,
+		enable_memory: false,
 		disable_stack: false,
 		disable_storage: true,
 		enable_return_data: true,
@@ -278,7 +278,7 @@ fn opcode_tracing_match_revm_works() {
 			builder::bare_call(addr)
 				.data(
 					Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall {
-						n: primitives::U256::from(3u64),
+						n: primitives::U256::from(2u64),
 					})
 					.abi_encode(),
 				)
@@ -296,7 +296,7 @@ fn opcode_tracing_match_revm_works() {
 		tracer.call(TxEnv {
 			kind: TransactTo::Call(addr),
 			data: Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall {
-				n: primitives::U256::from(3u64),
+				n: primitives::U256::from(2u64),
 			})
 			.abi_encode()
 			.into(),

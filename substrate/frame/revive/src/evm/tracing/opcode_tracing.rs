@@ -171,7 +171,7 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 		let gas_before_mapped = (self.gas_mapper)(gas_before);
 
 		log::trace!(target: crate::LOG_TARGET,
-			"\n[{pc}]: {opcode}\nstack: {stack_data:?}\nmemory: {memory:?}",
+			"\n[{pc}]: {opcode}\nstack: {stack_data:?}\nmemory: {memory:?}\nreturn_data: {return_data:?}",
 			opcode = revm::bytecode::OpCode::new(opcode)
 				.map_or("INVALID".to_string(), |x| format!("{:?}", x.info())),
 		);

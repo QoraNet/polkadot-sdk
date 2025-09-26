@@ -18,7 +18,8 @@ use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
 #[derive(Debug, Default, Clone)]
 pub struct RevmTracer {
 	db: CacheDB<EmptyDB>,
-	inspector: TracingInspector,
+	// inspector: TracingInspector,
+	config: OpcodeTracerConfig,
 }
 
 impl<Gas: Default> From<DefaultFrame> for OpcodeTrace<Gas> {
@@ -58,9 +59,7 @@ impl<Gas: Default> From<DefaultFrame> for OpcodeTrace<Gas> {
 
 impl RevmTracer {
 	pub fn new(config: OpcodeTracerConfig) -> Self {
-		let inspector =
-			TracingInspector::new(TracingInspectorConfig::from_geth_config(&config.into()));
-		Self { db: Default::default(), inspector }
+		Self { db: Default::default(), config }
 	}
 
 	fn get_nonce(&self, address: Address) -> u64 {
@@ -85,24 +84,25 @@ impl RevmTracer {
 	}
 
 	pub fn call(&mut self, tx: TxEnv) -> DefaultFrame {
-		let mut insp = TracingInspector::new(TracingInspectorConfig::from_geth_config(
-			&GethDefaultTracingOptions::default().enable_memory(),
+		let tx = TxEnv { nonce: self.get_nonce(tx.caller), ..tx };
+		let mut inspector = TracingInspector::new(TracingInspectorConfig::from_geth_config(
+			&self.config.clone().into(),
 		));
 
 		let evm = Context::mainnet().with_db(self.db.clone()).build_mainnet();
-		let mut evm = evm.clone().build_mainnet_with_inspector(&mut insp);
-		let tx = TxEnv { nonce: self.get_nonce(tx.caller), ..tx };
+		let mut evm = evm.clone().build_mainnet_with_inspector(&mut inspector);
 		let res = evm.inspect_tx(tx).unwrap();
 		assert!(res.result.is_success());
 		self.db = evm.db().clone();
 
-		let trace = insp
+		let trace = inspector
+			.clone()
 			.with_transaction_gas_used(res.result.gas_used())
 			.geth_builder()
 			.geth_traces(
 				res.result.gas_used(),
 				res.result.output().unwrap_or_default().clone(),
-				GethDefaultTracingOptions::default().enable_memory(),
+				self.config.clone().into(),
 			);
 
 		trace
