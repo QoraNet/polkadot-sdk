@@ -16,7 +16,6 @@
 // limitations under the License.
 use crate::{
 	evm::{tracing::Tracing, Bytes, OpcodeStep, OpcodeTrace, OpcodeTracerConfig},
-	vm::evm::{Memory, Stack},
 	DispatchError, ExecReturnValue, Key, Weight,
 };
 use alloc::{
@@ -124,8 +123,8 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 		pc: u64,
 		opcode: u8,
 		gas_before: Weight,
-		stack: &Stack,
-		memory: &Memory,
+		stack: &[U256],
+		memory: &[u8],
 		last_frame_output: &crate::ExecReturnValue,
 	) {
 		// Check step limit - if exceeded, don't record anything
@@ -134,11 +133,11 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 		}
 
 		// Extract stack data if enabled
-		let stack_data = if !self.config.disable_stack { stack.0.clone() } else { Vec::new() };
+		let stack_data = if !self.config.disable_stack { stack.to_vec() } else { Vec::new() };
 
 		// Extract memory data if enabled
 		let memory_data = if self.config.enable_memory {
-			let memory_size = memory.size();
+			let memory_size = memory.len();
 
 			if memory_size == 0 {
 				Vec::new()
@@ -149,9 +148,8 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 					core::cmp::min((memory_size + 31) / 32, self.config.memory_word_limit as usize);
 
 				for i in 0..words_to_read {
-					// Use get_word to read 32 bytes directly
-					let word = memory.get_word(i * 32);
-					memory_bytes.push(crate::evm::Bytes(word.to_vec()));
+					let word = memory[i..i + 32].to_vec();
+					memory_bytes.push(crate::evm::Bytes(word));
 				}
 
 				memory_bytes
