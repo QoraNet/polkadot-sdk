@@ -261,7 +261,8 @@ fn opcode_tracing_match_revm_works() {
 	let (code, _) = compile_module_with_type("Fibonacci", FixtureType::Solc).unwrap();
 	let config = OpcodeTracerConfig {
 		enable_memory: true,
-		enable_return_data: true,
+		// flip once https://github.com/paradigmxyz/revm-inspectors/pull/359 merged
+		enable_return_data: false,
 		disable_stack: false,
 		disable_storage: false,
 		memory_word_limit: 16,
