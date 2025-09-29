@@ -210,9 +210,8 @@ pub fn exec_instruction<E: Ext>(
 
 		RETURN => control::ret(interpreter),
 		REVERT => control::revert(interpreter),
-		INVALID => control::invalid(interpreter),
 		SELFDESTRUCT => host::selfdestruct(interpreter),
 
-		_ => control::unknown(interpreter),
+		_ => control::invalid(interpreter),
 	}
 }

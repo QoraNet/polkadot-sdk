@@ -834,6 +834,9 @@ pub struct CallTrace<Gas = U256> {
 	/// Type of call.
 	#[serde(rename = "type")]
 	pub call_type: CallType,
+	/// Number of child calls entered (for log position calculation)
+	#[serde(skip)]
+	pub child_call_count: u32,
 }
 
 /// A log emitted during a call.
