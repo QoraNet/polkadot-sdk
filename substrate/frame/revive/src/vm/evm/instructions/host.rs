@@ -1,4 +1,3 @@
-use crate::vm::evm::HaltReason;
 // This file is part of Substrate.
 
 // Copyright (C) Parity Technologies (UK) Ltd.
@@ -25,7 +24,7 @@ use crate::{
 		},
 		Ext,
 	},
-	DispatchError, Key, RuntimeCosts, U256,
+	DispatchError, Error, Key, RuntimeCosts, U256,
 };
 use core::ops::ControlFlow;
 
@@ -71,19 +70,15 @@ pub fn extcodehash<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt
 /// Copies a portion of an account's code to memory.
 pub fn extcodecopy<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let [address, memory_offset, code_offset, len] = interpreter.stack.popn()?;
-	let len = as_usize_or_halt(len)?;
-
-	interpreter
-		.ext
-		.gas_meter_mut()
-		.charge_or_halt(RuntimeCosts::ExtCodeCopy(len as u32))?;
-	let address = address.into_address();
-
+	let len = as_usize_or_halt::<E::T>(len)?;
+	interpreter.ext.charge_or_halt(RuntimeCosts::ExtCodeCopy(len as u32))?;
 	if len == 0 {
 		return ControlFlow::Continue(());
 	}
-	let memory_offset = as_usize_or_halt(memory_offset)?;
-	let code_offset = as_usize_or_halt(code_offset)?;
+
+	let address = address.into_address();
+	let memory_offset = as_usize_or_halt::<E::T>(memory_offset)?;
+	let code_offset = as_usize_or_halt::<E::T>(code_offset)?;
 
 	interpreter.memory.resize(memory_offset, len)?;
 
@@ -122,7 +117,7 @@ pub fn sload<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	*index = if let Some(storage_value) = value {
 		// sload always reads a word
 		let Ok::<[u8; 32], _>(bytes) = storage_value.try_into() else {
-			return ControlFlow::Break(HaltReason::FatalExternalError.into());
+			return ControlFlow::Break(Error::<E::T>::ContractTrapped.into());
 		};
 		U256::from_big_endian(&bytes)
 	} else {
@@ -139,7 +134,7 @@ fn store_helper<'ext, E: Ext>(
 	adjust_cost: fn(new_bytes: u32, old_bytes: u32) -> RuntimeCosts,
 ) -> ControlFlow<Halt> {
 	if interpreter.ext.is_read_only() {
-		return ControlFlow::Break(Halt::Revert(Vec::new()));
+		return ControlFlow::Break(Error::<E::T>::StateChangeDenied.into());
 	}
 
 	let [index, value] = interpreter.stack.popn()?;
@@ -151,7 +146,7 @@ fn store_helper<'ext, E: Ext>(
 	let Ok(write_outcome) =
 		set_function(interpreter.ext, &key, Some(value.to_big_endian().to_vec()), take_old)
 	else {
-		return ControlFlow::Break(HaltReason::FatalExternalError.into());
+		return ControlFlow::Break(Error::<E::T>::ContractTrapped.into());
 	};
 
 	interpreter
@@ -189,10 +184,7 @@ pub fn tstore<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 /// Load value from transient storage
 pub fn tload<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	let ([], index) = interpreter.stack.popn_top()?;
-	interpreter
-		.ext
-		.gas_meter_mut()
-		.charge_or_halt(RuntimeCosts::GetTransientStorage(32))?;
+	interpreter.ext.charge_or_halt(RuntimeCosts::GetTransientStorage(32))?;
 
 	let key = Key::Fix(index.to_big_endian());
 	let bytes = interpreter.ext.get_transient_storage(&key);
@@ -200,11 +192,11 @@ pub fn tload<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 	*index = if let Some(storage_value) = bytes {
 		if storage_value.len() != 32 {
 			// tload always reads a word
-			return ControlFlow::Break(HaltReason::FatalExternalError.into());
+			return ControlFlow::Break(Error::<E::T>::ContractTrapped.into());
 		}
 
 		let Ok::<[u8; 32], _>(bytes) = storage_value.try_into() else {
-			return ControlFlow::Break(HaltReason::FatalExternalError.into());
+			return ControlFlow::Break(Error::<E::T>::ContractTrapped.into());
 		};
 		U256::from_big_endian(&bytes)
 	} else {
@@ -221,28 +213,27 @@ pub fn log<'ext, const N: usize, E: Ext>(
 	interpreter: &mut Interpreter<'ext, E>,
 ) -> ControlFlow<Halt> {
 	if interpreter.ext.is_read_only() {
-		return ControlFlow::Break(Halt::Revert(Vec::new()));
+		return ControlFlow::Break(Error::<E::T>::StateChangeDenied.into());
 	}
 
 	let [offset, len] = interpreter.stack.popn()?;
-	let len = as_usize_or_halt(len)?;
+	let len = as_usize_or_halt::<E::T>(len)?;
 	if len as u32 > interpreter.ext.max_value_size() {
-		return ControlFlow::Break(HaltReason::InvalidOperandOOG.into());
+		return ControlFlow::Break(Error::<E::T>::OutOfGas.into());
 	}
 
-	interpreter
-		.ext
-		.gas_meter_mut()
-		.charge_or_halt(RuntimeCosts::DepositEvent { num_topic: N as u32, len: len as u32 })?;
+	let cost = RuntimeCosts::DepositEvent { num_topic: N as u32, len: len as u32 };
+	interpreter.ext.charge_or_halt(cost)?;
+
 	let data = if len == 0 {
 		Vec::new()
 	} else {
-		let offset = as_usize_or_halt(offset)?;
+		let offset = as_usize_or_halt::<E::T>(offset)?;
 		interpreter.memory.resize(offset, len)?;
 		interpreter.memory.slice(offset..offset + len).to_vec()
 	};
 	if interpreter.stack.len() < N {
-		return ControlFlow::Break(HaltReason::StackUnderflow.into());
+		return ControlFlow::Break(Error::<E::T>::StackUnderflow.into());
 	}
 	let topics = interpreter.stack.popn::<N>()?;
 	let topics = topics.into_iter().map(|v| sp_core::H256::from(v.to_big_endian())).collect();
@@ -256,5 +247,5 @@ pub fn log<'ext, const N: usize, E: Ext>(
 /// Halt execution and register account for later deletion.
 pub fn selfdestruct<'ext, E: Ext>(_interpreter: &mut Interpreter<'ext, E>) -> ControlFlow<Halt> {
 	// TODO: for now this instruction is not supported
-	ControlFlow::Break(HaltReason::NotActivated.into())
+	ControlFlow::Break(Error::<E::T>::InvalidInstruction.into())
 }

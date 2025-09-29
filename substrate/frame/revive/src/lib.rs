@@ -372,6 +372,7 @@ pub mod pallet {
 	}
 
 	#[pallet::error]
+	#[derive(PartialEq)]
 	#[repr(u8)]
 	pub enum Error<T> {
 		/// Invalid schedule supplied, e.g. with zero weight of a basic operation.
@@ -480,8 +481,12 @@ pub mod pallet {
 		CallDataTooLarge = 0x30,
 		/// The return data exceeds [`limits::CALLDATA_BYTES`].
 		ReturnDataTooLarge = 0x31,
-		/// EVM execution halted with the given reason.
-		Halt(crate::vm::evm::HaltReason) = 0x32,
+		/// Invalid jump destination. Dynamic jumps points to invalid not jumpdest opcode.
+		InvalidJump = 0x32,
+		/// Attempting to pop a value from an empty stack.
+		StackUnderflow = 0x33,
+		/// Attempting to push a value onto a full stack.
+		StackOverflow = 0x34,
 	}
 
 	/// A reason for the pallet revive placing a hold on funds.

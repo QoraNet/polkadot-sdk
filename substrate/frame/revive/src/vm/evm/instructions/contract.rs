@@ -1,4 +1,3 @@
-use crate::vm::evm::HaltReason;
 // This file is part of Substrate.
 
 // Copyright (C) Parity Technologies (UK) Ltd.
@@ -24,9 +23,10 @@ use crate::{
 		evm::{interpreter::Halt, util::as_usize_or_halt, Interpreter},
 		Ext, RuntimeCosts,
 	},
-	Code, Pallet, Weight, H160, U256,
+	Code, Error, Pallet, Weight, H160, LOG_TARGET, U256,
 };
-pub use call_helpers::{calc_call_gas, get_memory_input_and_out_ranges};
+use alloc::{vec, vec::Vec};
+pub use call_helpers::{calc_call_gas, get_memory_in_and_out_ranges};
 use core::{
 	cmp::min,
 	ops::{ControlFlow, Range},
@@ -40,11 +40,11 @@ pub fn create<const IS_CREATE2: bool, E: Ext>(
 	interpreter: &mut Interpreter<E>,
 ) -> ControlFlow<Halt> {
 	if interpreter.ext.is_read_only() {
-		return ControlFlow::Break(HaltReason::StateChangeDuringStaticCall.into());
+		return ControlFlow::Break(Error::<E::T>::StateChangeDenied.into());
 	}
 
 	let [value, code_offset, len] = interpreter.stack.popn()?;
-	let len = as_usize_or_halt(len)?;
+	let len = as_usize_or_halt::<E::T>(len)?;
 
 	// TODO: We do not charge for the new code in storage. When implementing the new gas:
 	// Introduce EthInstantiateWithCode, which shall charge gas based on the code length.
@@ -59,10 +59,10 @@ pub fn create<const IS_CREATE2: bool, E: Ext>(
 	if len != 0 {
 		// EIP-3860: Limit initcode
 		if len > revm::primitives::eip3860::MAX_INITCODE_SIZE {
-			return ControlFlow::Break(HaltReason::CreateInitCodeSizeLimit.into());
+			return ControlFlow::Break(Error::<E::T>::BlobTooLarge.into());
 		}
 
-		let code_offset = as_usize_or_halt(code_offset)?;
+		let code_offset = as_usize_or_halt::<E::T>(code_offset)?;
 		interpreter.memory.resize(code_offset, len)?;
 		code = interpreter.memory.slice_len(code_offset, len).to_vec();
 	}
@@ -77,7 +77,7 @@ pub fn create<const IS_CREATE2: bool, E: Ext>(
 	let call_result = interpreter.ext.instantiate(
 		Weight::from_parts(u64::MAX, u64::MAX), // TODO: set the right limit
 		U256::MAX,
-		Code::Upload(code.to_vec()),
+		Code::Upload(code),
 		value,
 		vec![],
 		salt.as_ref(),
@@ -88,11 +88,6 @@ pub fn create<const IS_CREATE2: bool, E: Ext>(
 			let return_value = interpreter.ext.last_frame_output();
 			if return_value.did_revert() {
 				// Contract creation reverted — return data must be propagated
-				let len = return_value.data.len() as u32;
-				interpreter
-					.ext
-					.gas_meter_mut()
-					.charge_or_halt(RuntimeCosts::CopyToContract(len))?;
 				interpreter.stack.push(U256::zero())
 			} else {
 				// Otherwise clear it. Note that RETURN opcode should abort.
@@ -101,8 +96,9 @@ pub fn create<const IS_CREATE2: bool, E: Ext>(
 			}
 		},
 		Err(err) => {
+			log::debug!(target: LOG_TARGET, "Create failed: {err:?}");
 			interpreter.stack.push(U256::zero())?;
-			return crate::vm::evm::interpreter::exec_error_into_halt::<E>(err)
+			ControlFlow::Continue(())
 		},
 	}
 }
@@ -111,18 +107,17 @@ pub fn create<const IS_CREATE2: bool, E: Ext>(
 ///
 /// Message call with value transfer to another account.
 pub fn call<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
-	let [local_gas_limit, to, value] = interpreter.stack.popn()?;
+	let [_local_gas_limit, to, value] = interpreter.stack.popn()?;
 	let to = to.into_address();
 	// TODO: Max gas limit is not possible in a real Ethereum situation. This issue will be
 	// addressed in #9577.
-	let _local_gas_limit = u64::try_from(local_gas_limit).unwrap_or(u64::MAX);
 
 	let has_transfer = !value.is_zero();
 	if interpreter.ext.is_read_only() && has_transfer {
-		return ControlFlow::Break(HaltReason::CallNotAllowedInsideStatic.into());
+		return ControlFlow::Break(Error::<E::T>::StateChangeDenied.into());
 	}
 
-	let (input, return_memory_offset) = get_memory_input_and_out_ranges(interpreter)?;
+	let (input, return_memory_range) = get_memory_in_and_out_ranges(interpreter)?;
 	let scheme = CallScheme::Call;
 	let gas_limit = calc_call_gas(interpreter, to, scheme, input.len(), value)?;
 
@@ -133,7 +128,7 @@ pub fn call<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 		scheme,
 		Weight::from_parts(gas_limit, u64::MAX),
 		value,
-		return_memory_offset,
+		return_memory_range,
 	)
 }
 
@@ -144,20 +139,19 @@ pub fn call<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
 /// Isn't supported yet: [`solc` no longer emits it since Solidity v0.3.0 in 2016]
 /// (https://soliditylang.org/blog/2016/03/11/solidity-0.3.0-release-announcement/).
 pub fn call_code<E: Ext>(_interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
-	ControlFlow::Break(HaltReason::NotActivated.into())
+	ControlFlow::Break(Error::<E::T>::InvalidInstruction.into())
 }
 
 /// Implements the DELEGATECALL instruction.
 ///
 /// Message call with alternative account's code but same sender and value.
 pub fn delegate_call<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
-	let [local_gas_limit, to] = interpreter.stack.popn()?;
+	let [_local_gas_limit, to] = interpreter.stack.popn()?;
 	let to = to.into_address();
 	// TODO: Max gas limit is not possible in a real Ethereum situation. This issue will be
 	// addressed in #9577.
-	let _local_gas_limit = u64::try_from(local_gas_limit).unwrap_or(u64::MAX);
 
-	let (input, return_memory_offset) = get_memory_input_and_out_ranges(interpreter)?;
+	let (input, return_memory_range) = get_memory_in_and_out_ranges(interpreter)?;
 	let scheme = CallScheme::DelegateCall;
 	let value = U256::zero();
 	let gas_limit = calc_call_gas(interpreter, to, scheme, input.len(), value)?;
@@ -169,7 +163,7 @@ pub fn delegate_call<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Ha
 		scheme,
 		Weight::from_parts(gas_limit, u64::MAX),
 		value,
-		return_memory_offset,
+		return_memory_range,
 	)
 }
 
@@ -177,12 +171,11 @@ pub fn delegate_call<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Ha
 ///
 /// Static message call (cannot modify state).
 pub fn static_call<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt> {
-	let [local_gas_limit, to] = interpreter.stack.popn()?;
+	let [_local_gas_limit, to] = interpreter.stack.popn()?;
 	let to = to.into_address();
 	// TODO: Max gas limit is not possible in a real Ethereum situation. This issue will be
 	// addressed in #9577.
-	let _local_gas_limit = u64::try_from(local_gas_limit).unwrap_or(u64::MAX);
-	let (input, return_memory_offset) = get_memory_input_and_out_ranges(interpreter)?;
+	let (input, return_memory_range) = get_memory_in_and_out_ranges(interpreter)?;
 	let scheme = CallScheme::StaticCall;
 	let value = U256::zero();
 	let gas_limit = calc_call_gas(interpreter, to, scheme, input.len(), value)?;
@@ -194,7 +187,7 @@ pub fn static_call<E: Ext>(interpreter: &mut Interpreter<E>) -> ControlFlow<Halt
 		scheme,
 		Weight::from_parts(gas_limit, u64::MAX),
 		value,
-		return_memory_offset,
+		return_memory_range,
 	)
 }
 
@@ -205,7 +198,7 @@ fn run_call<'a, E: Ext>(
 	scheme: CallScheme,
 	gas_limit: Weight,
 	value: U256,
-	return_memory_offset: Range<usize>,
+	return_memory_range: Range<usize>,
 ) -> ControlFlow<Halt> {
 	let call_result = match scheme {
 		CallScheme::Call | CallScheme::StaticCall => interpreter.ext.call(
@@ -226,8 +219,8 @@ fn run_call<'a, E: Ext>(
 
 	match call_result {
 		Ok(()) => {
-			let mem_start = return_memory_offset.start;
-			let mem_length = return_memory_offset.len();
+			let mem_start = return_memory_range.start;
+			let mem_length = return_memory_range.len();
 			let returned_len = interpreter.ext.last_frame_output().data.len();
 			let target_len = min(mem_length, returned_len);
 
@@ -240,12 +233,15 @@ fn run_call<'a, E: Ext>(
 			let return_value = interpreter.ext.last_frame_output();
 			let return_data = &return_value.data;
 			let did_revert = return_value.did_revert();
+
+			// Note: This can't panic because we resized memory with `get_memory_in_and_out_ranges`
 			interpreter.memory.set(mem_start, &return_data[..target_len]);
 			interpreter.stack.push(U256::from(!did_revert as u8))
 		},
 		Err(err) => {
+			log::debug!(target: LOG_TARGET, "Call failed: {err:?}");
 			interpreter.stack.push(U256::zero())?;
-			crate::vm::evm::interpreter::exec_error_into_halt::<E>(err)
+			ControlFlow::Continue(())
 		},
 	}
 }
