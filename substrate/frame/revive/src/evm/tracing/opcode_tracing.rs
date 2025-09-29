@@ -142,17 +142,13 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 			if memory_size == 0 {
 				Vec::new()
 			} else {
-				let mut memory_bytes = Vec::new();
-				// Read memory in 32-byte chunks, limiting to configured size
 				let words_to_read =
 					core::cmp::min((memory_size + 31) / 32, self.config.memory_word_limit as usize);
-
-				for i in 0..words_to_read {
-					let word = memory[i..i + 32].to_vec();
-					memory_bytes.push(crate::evm::Bytes(word));
-				}
-
-				memory_bytes
+				memory
+					.chunks(32)
+					.take(words_to_read)
+					.map(|chunk| Bytes(chunk.to_vec()))
+					.collect::<Vec<_>>()
 			}
 		} else {
 			Vec::new()
@@ -160,9 +156,9 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 
 		// Extract return data if enabled
 		let return_data = if self.config.enable_return_data {
-			crate::evm::Bytes(last_frame_output.data.clone())
+			Bytes(last_frame_output.data.clone())
 		} else {
-			crate::evm::Bytes::default()
+			Bytes::default()
 		};
 
 		// Create the pending opcode step (without gas cost)
@@ -261,8 +257,8 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 
 		// Get the last storage map for the current call depth
 		if let Some(storage) = self.storages_per_call.last_mut() {
-			let key_bytes = crate::evm::Bytes(key.unhashed().to_vec());
-			let value_bytes = crate::evm::Bytes(new_value.map(|v| v.to_vec()).unwrap_or_default());
+			let key_bytes = Bytes(key.unhashed().to_vec());
+			let value_bytes = Bytes(new_value.map(|v| v.to_vec()).unwrap_or_default());
 			storage.insert(key_bytes, value_bytes);
 
 			// Set storage on the pending step
@@ -280,10 +276,10 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 
 		// Get the last storage map for the current call depth
 		if let Some(storage) = self.storages_per_call.last_mut() {
-			let key_bytes = crate::evm::Bytes(key.unhashed().to_vec());
-			storage.entry(key_bytes).or_insert_with(|| {
-				crate::evm::Bytes(value.map(|v| v.to_vec()).unwrap_or_default())
-			});
+			let key_bytes = Bytes(key.unhashed().to_vec());
+			storage
+				.entry(key_bytes)
+				.or_insert_with(|| Bytes(value.map(|v| v.to_vec()).unwrap_or_default()));
 
 			// Set storage on the pending step
 			if let Some(ref mut step) = self.pending_step {

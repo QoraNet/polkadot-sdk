@@ -260,10 +260,10 @@ fn opcode_tracing_works() {
 fn opcode_tracing_match_revm_works() {
 	let (code, _) = compile_module_with_type("Fibonacci", FixtureType::Solc).unwrap();
 	let config = OpcodeTracerConfig {
-		enable_memory: false,
-		disable_stack: false,
-		disable_storage: true,
+		enable_memory: true,
 		enable_return_data: true,
+		disable_stack: false,
+		disable_storage: false,
 		memory_word_limit: 16,
 		limit: None,
 	};
