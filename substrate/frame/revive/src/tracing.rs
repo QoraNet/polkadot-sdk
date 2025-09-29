@@ -15,8 +15,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{primitives::ExecReturnValue, Code, DispatchError, Key, Weight};
-use alloc::vec::Vec;
+use crate::{primitives::ExecReturnValue, Code, Key, Weight};
+use alloc::{string::String, vec::Vec};
 use environmental::environmental;
 use sp_core::{H160, H256, U256};
 
@@ -103,5 +103,5 @@ pub trait Tracing {
 	fn exit_child_span(&mut self, _output: &ExecReturnValue, _gas_left: Weight) {}
 
 	/// Called when a contract call terminates with an error
-	fn exit_child_span_with_error(&mut self, _error: DispatchError, _gas_left: Weight) {}
+	fn exit_child_span_with_error(&mut self, _error: String, _gas_left: Weight) {}
 }

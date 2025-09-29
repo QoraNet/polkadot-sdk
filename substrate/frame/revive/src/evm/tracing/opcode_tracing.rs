@@ -16,7 +16,7 @@
 // limitations under the License.
 use crate::{
 	evm::{tracing::Tracing, Bytes, OpcodeStep, OpcodeTrace, OpcodeTracerConfig},
-	DispatchError, ExecReturnValue, Key, Weight,
+	ExecReturnValue, Key, Weight,
 };
 use alloc::{
 	collections::BTreeMap,
@@ -233,7 +233,7 @@ impl<GasMapper: Fn(Weight) -> U256> Tracing for OpcodeTracer<sp_core::U256, GasM
 		}
 	}
 
-	fn exit_child_span_with_error(&mut self, error: DispatchError, gas_used: Weight) {
+	fn exit_child_span_with_error(&mut self, error: String, gas_used: Weight) {
 		self.record_error(format!("{:?}", error));
 
 		// Mark as failed if this is the top-level call
