@@ -27,10 +27,9 @@ use crate::{
 		test_utils::{contract_base_deposit, ensure_stored, get_contract},
 		ExtBuilder, Test,
 	},
-	tracing::trace,
-	Code, Config, PristineCode, U256,
+	Code, Config, PristineCode,
 };
-use alloy_core::{primitives, sol_types::SolInterface};
+use alloy_core::sol_types::{SolCall, SolInterface};
 use frame_support::traits::fungible::Mutate;
 use pallet_revive_fixtures::{compile_module_with_type, Fibonacci, FixtureType};
 use pretty_assertions::assert_eq;
@@ -92,14 +91,10 @@ fn basic_evm_flow_works() {
 			assert_refcount!(contract.code_hash, i as u64);
 
 			let result = builder::bare_call(addr)
-				.data(
-					Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall {
-						n: primitives::U256::from(10u64),
-					})
-					.abi_encode(),
-				)
+				.data(Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall { n: 10u64 }).abi_encode())
 				.build_and_unwrap_result();
-			assert_eq!(U256::from(55u32), U256::from_big_endian(&result.data));
+			let decoded = Fibonacci::fibCall::abi_decode_returns(&result.data).unwrap();
+			assert_eq!(55u64, decoded);
 		}
 
 		// init code is not stored
@@ -138,16 +133,12 @@ fn basic_evm_flow_tracing_works() {
 		let mut call_tracer = CallTracer::new(Default::default(), |_| crate::U256::zero());
 		let result = trace(&mut call_tracer, || {
 			builder::bare_call(addr)
-				.data(
-					Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall {
-						n: primitives::U256::from(10u64),
-					})
-					.abi_encode(),
-				)
+				.data(Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall { n: 10u64 }).abi_encode())
 				.build_and_unwrap_result()
 		});
 
-		assert_eq!(crate::U256::from(55u32), crate::U256::from_big_endian(&result.data));
+		let decoded = Fibonacci::fibCall::abi_decode_returns(&result.data).unwrap();
+		assert_eq!(55u64, decoded);
 
 		assert_eq!(
 			call_tracer.collect_trace().unwrap(),
@@ -155,11 +146,9 @@ fn basic_evm_flow_tracing_works() {
 				call_type: CallType::Call,
 				from: ALICE_ADDR,
 				to: addr,
-				input: Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall {
-					n: primitives::U256::from(10u64)
-				})
-				.abi_encode()
-				.into(),
+				input: Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall { n: 10u64 })
+					.abi_encode()
+					.into(),
 				output: result.data.into(),
 				value: Some(crate::U256::zero()),
 				..Default::default()

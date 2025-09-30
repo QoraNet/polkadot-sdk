@@ -22,7 +22,6 @@ use crate::{
 	tests::{builder, test_utils, ExtBuilder, RuntimeEvent, Test},
 	Code, Config, Error, Key, System, H256, U256,
 };
-use alloy_core::primitives;
 use frame_support::assert_err_ignore_postinfo;
 
 use alloy_core::sol_types::{SolCall, SolInterface};
@@ -60,12 +59,12 @@ fn balance_works(fixture_type: FixtureType) {
 				)
 				.build_and_unwrap_result();
 			assert!(!result.did_revert(), "test reverted");
-			let result = U256::from_big_endian(&result.data);
+			let decoded = Host::balanceCall::abi_decode_returns(&result.data).unwrap();
 
 			assert_eq!(
-				expected_balance, result,
-				"BALANCE should return BOB's balance for {:?}",
-				fixture_type
+				expected_balance.as_u64(),
+				decoded,
+				"BALANCE should return BOB's balance for {fixture_type:?}",
 			);
 		}
 	});
@@ -93,12 +92,12 @@ fn selfbalance_works(fixture_type: FixtureType) {
 				.data(Host::HostCalls::selfbalance(Host::selfbalanceCall {}).abi_encode())
 				.build_and_unwrap_result();
 			assert!(!result.did_revert(), "test reverted");
-			let result_balance = U256::from_big_endian(&result.data);
+			let decoded = Host::selfbalanceCall::abi_decode_returns(&result.data).unwrap();
 
 			assert_eq!(
-				expected_balance, result_balance,
-				"BALANCE should return contract's balance for {:?}",
-				fixture_type
+				expected_balance.as_u64(),
+				decoded,
+				"BALANCE should return contract's balance for {fixture_type:?}",
 			);
 		}
 	});
@@ -132,12 +131,12 @@ fn extcodesize_works(fixture_type: FixtureType) {
 				.build_and_unwrap_result();
 			assert!(!result.did_revert(), "test reverted");
 
-			let result_size = U256::from_big_endian(&result.data);
+			let decoded = Host::extcodesizeOpCall::abi_decode_returns(&result.data).unwrap();
 
 			assert_eq!(
-				expected_code_size, result_size,
-				"EXTCODESIZE should return the code size for {:?}",
-				fixture_type
+				expected_code_size.as_u64(),
+				decoded,
+				"EXTCODESIZE should return the code size for {fixture_type:?}",
 			);
 		}
 	});
@@ -170,13 +169,12 @@ fn extcodehash_works(fixture_type: FixtureType) {
 				.build_and_unwrap_result();
 			assert!(!result.did_revert(), "test reverted");
 
-			let result_hash = U256::from_big_endian(&result.data);
-			let result_hash = H256::from(result_hash.to_big_endian());
+			let decoded = Host::extcodehashOpCall::abi_decode_returns(&result.data).unwrap();
 
 			assert_eq!(
-				expected_code_hash, result_hash,
-				"EXTCODEHASH should return the code hash for {:?}",
-				fixture_type
+				expected_code_hash,
+				H256::from_slice(decoded.as_slice()),
+				"EXTCODEHASH should return the code hash for {fixture_type:?}",
 			);
 		}
 	});
@@ -254,8 +252,8 @@ fn extcodecopy_works(caller_type: FixtureType, callee_type: FixtureType) {
 				.data(
 					HostEvmOnlyCalls::extcodecopyOp(HostEvmOnly::extcodecopyOpCall {
 						account: dummy_addr.0.into(),
-						offset: primitives::U256::from(test_case.offset),
-						size: primitives::U256::from(test_case.size),
+						offset: test_case.offset as u64,
+						size: test_case.size as u64,
 					})
 					.abi_encode(),
 				)
@@ -283,9 +281,7 @@ fn blockhash_works(fixture_type: FixtureType) {
 
 	ExtBuilder::default().build().execute_with(|| {
 		let block_number_to_test = 5u64;
-
 		System::<Test>::set_block_number(13);
-
 		<Test as Config>::Currency::set_balance(&ALICE, 100_000_000_000_000);
 
 		let Contract { addr, .. } =
@@ -294,28 +290,26 @@ fn blockhash_works(fixture_type: FixtureType) {
 		{
 			let block_hash = [1; 32];
 			frame_system::BlockHash::<Test>::insert(
-				&crate::BlockNumberFor::<Test>::from(block_number_to_test as u64),
+				&crate::BlockNumberFor::<Test>::from(block_number_to_test),
 				<Test as frame_system::Config>::Hash::from(&block_hash),
 			);
 			let result = builder::bare_call(addr)
 				.data(
 					Host::HostCalls::blockhashOp(Host::blockhashOpCall {
-						blockNumber: primitives::U256::from(block_number_to_test),
+						blockNumber: block_number_to_test,
 					})
 					.abi_encode(),
 				)
 				.build_and_unwrap_result();
 			assert!(!result.did_revert(), "test reverted");
 
-			let result_hash = U256::from_big_endian(&result.data);
-			let result_hash = H256::from(result_hash.to_big_endian());
-
+			let decoded = Host::blockhashOpCall::abi_decode_returns(&result.data).unwrap();
 			let expected_block_hash = System::<Test>::block_hash(block_number_to_test);
 
 			assert_eq!(
-				expected_block_hash, result_hash,
-				"EXTBLOCKHASH should return the block hash for {:?}",
-				fixture_type
+				expected_block_hash,
+				H256::from_slice(decoded.as_slice()),
+				"EXTBLOCKHASH should return the block hash for {fixture_type:?}",
 			);
 		}
 	});
@@ -326,8 +320,8 @@ fn blockhash_works(fixture_type: FixtureType) {
 fn sload_works(fixture_type: FixtureType) {
 	let (code, _) = compile_module_with_type("Host", fixture_type).unwrap();
 
-	let index = U256::from(13);
-	let expected_value = U256::from(17);
+	let index = 13u64;
+	let expected_value = 17u64;
 
 	ExtBuilder::default().build().execute_with(|| {
 		<Test as Config>::Currency::set_balance(&ALICE, 100_000_000_000);
@@ -337,28 +331,22 @@ fn sload_works(fixture_type: FixtureType) {
 
 		{
 			let contract_info = test_utils::get_contract(&addr);
-			let key = Key::Fix(index.to_big_endian());
+			let key = Key::Fix(U256::from(index).to_big_endian());
 			contract_info
-				.write(&key, Some(expected_value.to_big_endian().to_vec()), None, false)
+				.write(&key, Some(U256::from(expected_value).to_big_endian().to_vec()), None, false)
 				.unwrap();
 		}
 
 		{
 			let result = builder::bare_call(addr)
-				.data(
-					Host::HostCalls::sloadOp(Host::sloadOpCall {
-						slot: primitives::U256::from_be_bytes(index.to_big_endian()),
-					})
-					.abi_encode(),
-				)
+				.data(Host::HostCalls::sloadOp(Host::sloadOpCall { slot: index }).abi_encode())
 				.build_and_unwrap_result();
 			assert!(!result.did_revert(), "test reverted");
-			let result = U256::from_big_endian(&result.data);
+			let decoded = Host::sloadOpCall::abi_decode_returns(&result.data).unwrap();
 
 			assert_eq!(
-				expected_value, result,
-				"result should return expected value {:?}",
-				fixture_type
+				expected_value, decoded,
+				"result should return expected value {fixture_type:?}",
 			);
 		}
 	});
@@ -368,7 +356,7 @@ fn sload_works(fixture_type: FixtureType) {
 fn sload_error_reading_non_32_byte_value() {
 	let (code, _) = compile_module_with_type("Host", FixtureType::Solc).unwrap();
 
-	let index = 13u32;
+	let index = 13u64;
 	let expected_value = U256::from(17);
 
 	ExtBuilder::default().build().execute_with(|| {
@@ -387,12 +375,7 @@ fn sload_error_reading_non_32_byte_value() {
 
 			assert_err_ignore_postinfo!(
 				builder::call(addr)
-					.data(
-						Host::HostCalls::sloadOp(Host::sloadOpCall {
-							slot: primitives::U256::from(index),
-						})
-						.abi_encode(),
-					)
+					.data(Host::HostCalls::sloadOp(Host::sloadOpCall { slot: index }).abi_encode(),)
 					.build(),
 				Error::<Test>::ContractTrapped
 			);
@@ -408,12 +391,7 @@ fn sload_error_reading_non_32_byte_value() {
 
 			assert_err_ignore_postinfo!(
 				builder::call(addr)
-					.data(
-						Host::HostCalls::sloadOp(Host::sloadOpCall {
-							slot: primitives::U256::from(index),
-						})
-						.abi_encode()
-					)
+					.data(Host::HostCalls::sloadOp(Host::sloadOpCall { slot: index }).abi_encode())
 					.build(),
 				Error::<Test>::ContractTrapped
 			);
@@ -427,9 +405,9 @@ fn sstore_works(fixture_type: FixtureType) {
 	let (code, _) = compile_module_with_type("Host", fixture_type).unwrap();
 
 	ExtBuilder::default().build().execute_with(|| {
-		let index = U256::from(13);
-		let expected_value = U256::from(17);
-		let unexpected_value = U256::from(19);
+		let index = 13u64;
+		let expected_value = 17u64;
+		let unexpected_value = 19u64;
 
 		<Test as Config>::Currency::set_balance(&ALICE, 100_000_000_000);
 
@@ -438,9 +416,14 @@ fn sstore_works(fixture_type: FixtureType) {
 
 		{
 			let contract_info = test_utils::get_contract(&addr);
-			let key = Key::Fix(index.to_big_endian());
+			let key = Key::Fix(U256::from(index).to_big_endian());
 			contract_info
-				.write(&key, Some(unexpected_value.to_big_endian().to_vec()), None, false)
+				.write(
+					&key,
+					Some(U256::from(unexpected_value).to_big_endian().to_vec()),
+					None,
+					false,
+				)
 				.unwrap();
 		}
 
@@ -448,8 +431,8 @@ fn sstore_works(fixture_type: FixtureType) {
 			let result = builder::bare_call(addr)
 				.data(
 					Host::HostCalls::sstoreOp(Host::sstoreOpCall {
-						slot: primitives::U256::from_be_bytes(index.to_big_endian()),
-						value: primitives::U256::from_be_bytes(expected_value.to_big_endian()),
+						slot: index,
+						value: expected_value,
 					})
 					.abi_encode(),
 				)
@@ -458,12 +441,13 @@ fn sstore_works(fixture_type: FixtureType) {
 
 			let written_value = {
 				let contract_info = test_utils::get_contract(&addr);
-				let key = Key::Fix(index.to_big_endian());
+				let key = Key::Fix(U256::from(index).to_big_endian());
 				let result = contract_info.read(&key).unwrap();
 				U256::from_big_endian(&result)
 			};
 			assert_eq!(
-				expected_value, written_value,
+				U256::from(expected_value),
+				written_value,
 				"result should return expected value {:?}",
 				fixture_type
 			);
@@ -561,9 +545,8 @@ fn transient_storage_works(fixture_type: FixtureType) {
 	let (code, _) = compile_module_with_type("HostTransientMemory", fixture_type).unwrap();
 
 	ExtBuilder::default().build().execute_with(|| {
-		let slot = primitives::U256::from(0);
-
-		let value = primitives::U256::from(13);
+		let slot = 0u64;
+		let value = 13u64;
 
 		<Test as Config>::Currency::set_balance(&ALICE, 100_000_000_000);
 
@@ -579,12 +562,9 @@ fn transient_storage_works(fixture_type: FixtureType) {
 			)
 			.build_and_unwrap_result();
 		assert!(!result.did_revert(), "test reverted");
-		assert_eq!(
-			U256::from_big_endian(&result.data),
-			U256::from(0),
-			"transient storage should return zero for {:?}",
-			fixture_type
-		);
+		let decoded =
+			HostTransientMemory::transientMemoryTestCall::abi_decode_returns(&result.data).unwrap();
+		assert_eq!(0u64, decoded, "transient storage should return zero for {fixture_type:?}");
 	});
 }
 
@@ -614,7 +594,7 @@ fn logs_denied_for_static_call(caller_type: FixtureType, callee_type: FixtureTyp
 				Caller::CallerCalls::staticCall(Caller::staticCallCall {
 					_callee: host_addr.0.into(),
 					_data: Host::HostCalls::logOps(Host::logOpsCall {}).abi_encode().into(),
-					_gas: primitives::U256::MAX,
+					_gas: u64::MAX,
 				})
 				.abi_encode(),
 			)
