@@ -50,7 +50,8 @@ use subxt::{
 	},
 	config::{HashFor, Header},
 	ext::subxt_rpcs::rpc_params,
-	Config, OnlineClient,
+	tx::TxProgress,
+	Config, OnlineClient, PolkadotConfig,
 };
 use thiserror::Error;
 
@@ -404,6 +405,14 @@ impl Client {
 		let ext = self.api.tx().create_unsigned(&call).map_err(ClientError::from)?;
 		let hash = ext.submit().await?;
 		Ok(hash)
+	}
+
+	pub async fn submit_and_watch(
+		&self,
+		call: subxt::tx::DefaultPayload<EthTransact>,
+	) -> Result<TxProgress<PolkadotConfig, OnlineClient<SrcChainConfig>>, ClientError> {
+		let ext = self.api.tx().create_unsigned(&call).map_err(ClientError::from)?;
+		ext.submit_and_watch().await.map_err(ClientError::from)
 	}
 
 	/// Get an EVM transaction receipt by hash.
