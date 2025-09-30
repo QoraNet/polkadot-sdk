@@ -111,9 +111,9 @@ fn basic_evm_flow_tracing_works() {
 		let mut tracer = CallTracer::new(Default::default(), |_| crate::U256::zero());
 		let _ = <Test as Config>::Currency::set_balance(&ALICE, 100_000_000_000);
 
-		let Contract { addr, .. } = trace(&mut tracer, || {
-			builder::bare_instantiate(Code::Upload(code.clone())).build_and_unwrap_contract()
-		});
+		let Contract { addr, .. } = builder::bare_instantiate(Code::Upload(code.clone()))
+			.with_tracer(&mut tracer)
+			.build_and_unwrap_contract();
 
 		let contract = get_contract(&addr);
 		let runtime_code = PristineCode::<Test>::get(contract.code_hash).unwrap();
@@ -177,11 +177,10 @@ fn opcode_tracing_works() {
 		};
 
 		let mut tracer = OpcodeTracer::new(config, |_| sp_core::U256::from(0u64));
-		let _result = trace(&mut tracer, || {
-			builder::bare_call(addr)
-				.data(Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall { n: 3u64 }).abi_encode())
-				.build_and_unwrap_result()
-		});
+		builder::bare_call(addr)
+			.data(Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall { n: 3u64 }).abi_encode())
+			.with_tracer(&mut tracer)
+			.build_and_unwrap_result();
 
 		let actual_trace = tracer.collect_trace();
 
@@ -260,11 +259,10 @@ fn opcode_tracing_match_revm_works() {
 			builder::bare_instantiate(Code::Upload(code.clone())).build_and_unwrap_contract();
 
 		let mut tracer = OpcodeTracer::new(config.clone(), |_| U256::from(0u64));
-		let _result = trace(&mut tracer, || {
-			builder::bare_call(addr)
-				.data(Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall { n: 2u64 }).abi_encode())
-				.build_and_unwrap_result()
-		});
+		builder::bare_call(addr)
+			.data(Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall { n: 2u64 }).abi_encode())
+			.with_tracer(&mut tracer)
+			.build_and_unwrap_result();
 
 		tracer.collect_trace()
 	});
