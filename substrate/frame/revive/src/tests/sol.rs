@@ -166,7 +166,6 @@ fn opcode_tracing_works() {
 		let Contract { addr, .. } =
 			builder::bare_instantiate(Code::Upload(code)).build_and_unwrap_contract();
 
-		// Test with a specific configuration and verify exact structure
 		let config = OpcodeTracerConfig {
 			enable_memory: false,
 			disable_stack: false,
@@ -183,12 +182,10 @@ fn opcode_tracing_works() {
 			.build_and_unwrap_result();
 
 		let actual_trace = tracer.collect_trace();
-
-		// Create expected trace structure that matches the exact execution
 		let expected_trace = OpcodeTrace {
-			gas: actual_trace.gas, // Use actual gas since it varies
+			gas: actual_trace.gas,
 			failed: false,
-			return_value: crate::evm::Bytes(U256::from(2).to_big_endian().to_vec()), // fib(3) = 2
+			return_value: crate::evm::Bytes(U256::from(2).to_big_endian().to_vec()),
 			struct_logs: vec![
 				OpcodeStep {
 					pc: 0,
