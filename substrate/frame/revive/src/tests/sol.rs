@@ -27,7 +27,8 @@ use crate::{
 		test_utils::{contract_base_deposit, ensure_stored, get_contract},
 		ExtBuilder, Test,
 	},
-	Code, Config, PristineCode,
+	tracing::trace,
+	Code, Config, PristineCode, U256,
 };
 use alloy_core::sol_types::{SolCall, SolInterface};
 use frame_support::traits::fungible::Mutate;
@@ -178,12 +179,7 @@ fn opcode_tracing_works() {
 		let mut tracer = OpcodeTracer::new(config, |_| sp_core::U256::from(0u64));
 		let _result = trace(&mut tracer, || {
 			builder::bare_call(addr)
-				.data(
-					Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall {
-						n: primitives::U256::from(3u64),
-					})
-					.abi_encode(),
-				)
+				.data(Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall { n: 3u64 }).abi_encode())
 				.build_and_unwrap_result()
 		});
 
@@ -266,12 +262,7 @@ fn opcode_tracing_match_revm_works() {
 		let mut tracer = OpcodeTracer::new(config.clone(), |_| U256::from(0u64));
 		let _result = trace(&mut tracer, || {
 			builder::bare_call(addr)
-				.data(
-					Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall {
-						n: primitives::U256::from(2u64),
-					})
-					.abi_encode(),
-				)
+				.data(Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall { n: 2u64 }).abi_encode())
 				.build_and_unwrap_result()
 		});
 
@@ -285,11 +276,9 @@ fn opcode_tracing_match_revm_works() {
 		let addr = tracer.deploy(TxEnv { data: Bytes::from(code), ..Default::default() });
 		tracer.call(TxEnv {
 			kind: TransactTo::Call(addr),
-			data: Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall {
-				n: primitives::U256::from(2u64),
-			})
-			.abi_encode()
-			.into(),
+			data: Fibonacci::FibonacciCalls::fib(Fibonacci::fibCall { n: 2u64 })
+				.abi_encode()
+				.into(),
 			..Default::default()
 		})
 	};
