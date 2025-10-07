@@ -11,29 +11,52 @@ edition.workspace = true
 [dependencies]
 array-bytes = { workspace = true }
 codec = { workspace = true }
-polkadot-sdk = { workspace = true, features = [
-	"pallet-balances",
-	"pallet-revive",
-	"pallet-sudo",
-	"pallet-timestamp",
-	"pallet-transaction-payment",
-	"pallet-transaction-payment-rpc-runtime-api",
-	"parachains-common",
-	"polkadot-runtime-common",
-	"runtime",
-	"with-tracing",
-] }
 scale-info = { workspace = true }
 serde_json = { workspace = true, default-features = false, features = ["alloc"] }
+# Primitives/Utility crates (from "runtime" features)
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+sp-api = { workspace = true }
+sp-block-builder = { workspace = true }
+sp-core = { workspace = true }
+sp-runtime = { workspace = true }
+sp-version = { workspace = true } # Commonly needed
+polkadot-runtime-common = { workspace = true } # From the feature list
+parachains-common = { workspace = true } # From the feature list
+
+# Pallets (from "pallet-..." features)
+pallet-balances = { workspace = true }
+pallet-revive = { workspace = true }
+pallet-sudo = { workspace = true }
+pallet-timestamp = { workspace = true }
+pallet-transaction-payment = { workspace = true }
+
+# RPC API (if needed by the runtime, usually only the runtime-api part)
+pallet-transaction-payment-rpc-runtime-api = { workspace = true }
+
 
 [build-dependencies]
-polkadot-sdk = { optional = true, workspace = true, features = ["substrate-wasm-builder"] }
+substrate-wasm-builder = { workspace = true }
 
 [features]
 default = ["std"]
 std = [
 	"codec/std",
-	"polkadot-sdk/std",
 	"scale-info/std",
 	"serde_json/std",
+	"frame-support/std",
+    "frame-system/std",
+    "sp-api/std",
+    "sp-block-builder/std",
+    "sp-core/std",
+    "sp-runtime/std",
+    "sp-version/std",
+    "polkadot-runtime-common/std",
+    "parachains-common/std",
+    "pallet-balances/std",
+    "pallet-revive/std",
+    "pallet-sudo/std",
+    "pallet-timestamp/std",
+    "pallet-transaction-payment/std",
+    "pallet-transaction-payment-rpc-runtime-api/std",
 ]
