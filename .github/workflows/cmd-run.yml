@@ -414,7 +414,6 @@ jobs:
             echo "Nothing to commit";
           fi
 
-
       - name: Comment PR (End)
         # No need to comment on prdoc success or --quiet
         #TODO: return "&& !contains(github.event.comment.body, '--quiet')"
@@ -447,7 +446,6 @@ jobs:
               repo: context.repo.repo,
               body: `Command "${cmd}" has finished ✅ [See logs here](${runUrl})${subweightCollapsed}${cmdOutputCollapsed}`
             })
-
 
   finish:
     needs: [before-cmd, cmd, after-cmd]
