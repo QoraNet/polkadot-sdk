@@ -335,10 +335,12 @@ pub trait EthExtra {
 
 		log::debug!(target: LOG_TARGET, "\
 			Created checked Ethereum transaction with: \
+			eth_gas={} \
 			weight_limit={} \
 			additional_storage_deposit_held={:?} \
 			nonce={nonce:?}
 			",
+			call_info.gas,
 			call_info.weight_limit,
 			call_info.storage_deposit,
 		);
