@@ -157,8 +157,6 @@ impl<T: crate::Config> EthereumBlockBuilder<T> {
 			if let Some((first_tx, first_receipt)) = self.pallet_take_first_values() {
 				self.transaction_root_builder.set_first_value(first_tx);
 				self.receipts_root_builder.set_first_value(first_receipt);
-			} else {
-				log::debug!(target: LOG_TARGET, "Building an empty block");
 			}
 		}
 
