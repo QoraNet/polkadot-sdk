@@ -1,62 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1761326383720,
+  "lastUpdate": 1761329182073,
   "repoUrl": "https://github.com/paritytech/polkadot-sdk",
   "entries": {
     "availability-distribution-regression-bench": [
-      {
-        "commit": {
-          "author": {
-            "email": "jesse.rafters@gmail.com",
-            "name": "Jesse Rafters",
-            "username": "Wolfenheimm"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "c854f7c6b7291154072d8e931eddb426f98217fc",
-          "message": "Check umbrella version (#8250)\n\n# Description\n\nThis PR fixes the issue where check-umbrella fails unless the proper\numbrella crate version is hardcoded into the workflow. The solution adds\nthe version detection logic to properly determine the umbrella crate\nversion by:\n\n1. Using cargo metadata & jq to extract the version, specifying\numbrella/cargo.toml\n2. Falling back to using version 0.1.0 if metadata fails\n\nFixes https://github.com/paritytech/polkadot-sdk/issues/8029\n\n## Integration\n\nNo integration changes are required for downstream projects.  \nThe workflow will now always use the version from `cargo metadata` if\navailable, or fallback to `0.1.0` if not.\nNo environment variables or external configuration changes are needed.\n\n## Review Notes\n\n- Modified version extraction logic in `check-umbrella` job to\ndynamically determine the correct version\n\n# Checklist\n\n* [x] My PR includes a detailed description as outlined in the\n\"Description\" and its two subsections above.\n* [x] My PR follows the labeling requirements of this project (at\nminimum one label for `T` required)\n* [ ] I have made corresponding changes to the documentation (if\napplicable)\n* [ ] I have added tests that prove my fix is effective or that my\nfeature works (if applicable)\n\n---------\n\nCo-authored-by: Iulian Barbu <14218860+iulianbarbu@users.noreply.github.com>",
-          "timestamp": "2025-04-25T11:57:33Z",
-          "tree_id": "2bf8afab83106ddae4ec228812760ea03d3abc5b",
-          "url": "https://github.com/paritytech/polkadot-sdk/commit/c854f7c6b7291154072d8e931eddb426f98217fc"
-        },
-        "date": 1745588083247,
-        "tool": "customSmallerIsBetter",
-        "benches": [
-          {
-            "name": "Received from peers",
-            "value": 433.3333333333332,
-            "unit": "KiB"
-          },
-          {
-            "name": "Sent to peers",
-            "value": 18481.666666666653,
-            "unit": "KiB"
-          },
-          {
-            "name": "bitfield-distribution",
-            "value": 0.02235412098,
-            "unit": "seconds"
-          },
-          {
-            "name": "availability-distribution",
-            "value": 0.012935435373333328,
-            "unit": "seconds"
-          },
-          {
-            "name": "availability-store",
-            "value": 0.15648804687333337,
-            "unit": "seconds"
-          },
-          {
-            "name": "test-environment",
-            "value": 0.008821311393333413,
-            "unit": "seconds"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -26999,6 +26945,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "test-environment",
             "value": 0.0073509400933333335,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "robertvaneerdewijk@gmail.com",
+            "name": "0xRVE",
+            "username": "0xRVE"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8ab9a68e4f1185685206d581bd018bd7d0d7f051",
+          "message": "Change bahaviour of contract termination in accordance with EIP-6780 (#9699)\n\nfixes https://github.com/paritytech/polkadot-sdk/issues/9621\n\nBehavior of `terminate` is changed in accordance with EIP-6780 (and EVM\nin general):\n- `terminate` only deletes the code from storage if it is called in the\nsame transaction the contract was created.\n- `terminate` does not destroy the contract instantly. The contract is\nregistered for destruction, which happens at the end of the transaction.\n\n---------\n\nSigned-off-by: xermicus <cyrill@parity.io>\nSigned-off-by: Cyrill Leutwiler <bigcyrill@hotmail.com>\nCo-authored-by: Robert van Eerdewijk <robert@Roberts-MacBook-Pro.local>\nCo-authored-by: pgherveou <pgherveou@gmail.com>\nCo-authored-by: Sebastian Miasojed <sebastian.miasojed@parity.io>\nCo-authored-by: Sebastian Miasojed <s.miasojed@gmail.com>\nCo-authored-by: xermicus <cyrill@parity.io>\nCo-authored-by: Cyrill Leutwiler <bigcyrill@hotmail.com>\nCo-authored-by: Alexander Theißen <alex.theissen@me.com>\nCo-authored-by: cmd[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2025-10-24T16:48:13Z",
+          "tree_id": "df6ab0114b29c3a8e616dcf9ed2789cff97753fc",
+          "url": "https://github.com/paritytech/polkadot-sdk/commit/8ab9a68e4f1185685206d581bd018bd7d0d7f051"
+        },
+        "date": 1761329158063,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Sent to peers",
+            "value": 18481.666666666653,
+            "unit": "KiB"
+          },
+          {
+            "name": "Received from peers",
+            "value": 433.3333333333332,
+            "unit": "KiB"
+          },
+          {
+            "name": "test-environment",
+            "value": 0.007253548739999977,
+            "unit": "seconds"
+          },
+          {
+            "name": "availability-distribution",
+            "value": 0.013327685953333335,
+            "unit": "seconds"
+          },
+          {
+            "name": "availability-store",
+            "value": 0.16016098808666676,
+            "unit": "seconds"
+          },
+          {
+            "name": "bitfield-distribution",
+            "value": 0.022626645493333326,
             "unit": "seconds"
           }
         ]
