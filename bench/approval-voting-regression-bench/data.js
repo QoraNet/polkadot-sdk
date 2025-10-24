@@ -1,107 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1761326417020,
+  "lastUpdate": 1761329215167,
   "repoUrl": "https://github.com/paritytech/polkadot-sdk",
   "entries": {
     "approval-voting-regression-bench": [
-      {
-        "commit": {
-          "author": {
-            "email": "paolo@parity.io",
-            "name": "Paolo La Camera",
-            "username": "sigurpol"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": false,
-          "id": "7e65abb1808126994339b9990a543378c6f2af4c",
-          "message": "staking-async: add missing new_session_genesis (#8310)\n\nFix issue #8302 (introduced by #8127), where the staking-async module\ncould fail during genesis.\n\nThe issue was related to the staking-async module in the Polkadot SDK,\nspecifically with the implementation of the `historical::SessionManager`\ntrait in the `ah-client` pallet with missing implementations of the\nnew_session_genesis method in two different places:\n- In the pallet_session::SessionManager<T::AccountId> implementation\n- In the historical::SessionManager<T::AccountId,\nsp_staking::Exposure<T::AccountId, BalanceOf<T>>> implementation\n\nNote: the SessionManager trait requires the implementation of\nnew_session_genesis for proper functioning, especially during chain\ninitialization.\n\nThe pallet-staking-async/ah-client has different operating modes:\n- Passive: Delegates operations to a fallback implementation\n- Buffered: Buffers operations for later processing\n- Active: Performs operations directly\n\nThe fix ensures that in Passive mode, the new_session_genesis method\ncorrectly delegates to the fallback implementation, while in other modes\nit returns None.\n\n---------\n\nCo-authored-by: kianenigma <kian@parity.io>",
-          "timestamp": "2025-04-25T08:51:49Z",
-          "tree_id": "3bdbf4f74503a7d64369f2267050bfaf64adc664",
-          "url": "https://github.com/paritytech/polkadot-sdk/commit/7e65abb1808126994339b9990a543378c6f2af4c"
-        },
-        "date": 1745574708583,
-        "tool": "customSmallerIsBetter",
-        "benches": [
-          {
-            "name": "Sent to peers",
-            "value": 63622.51000000001,
-            "unit": "KiB"
-          },
-          {
-            "name": "Received from peers",
-            "value": 52932.7,
-            "unit": "KiB"
-          },
-          {
-            "name": "approval-voting-parallel",
-            "value": 11.702373315229998,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-distribution",
-            "value": 0.00001910152,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting",
-            "value": 0.000019121070000000004,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-gather-signatures",
-            "value": 0.006135854950000004,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-db",
-            "value": 1.8947490183299973,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-distribution/test-environment",
-            "value": 0.00001910152,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-0",
-            "value": 2.3265621301799997,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-2",
-            "value": 2.3648269750300015,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-subsystem",
-            "value": 0.449502400590001,
-            "unit": "seconds"
-          },
-          {
-            "name": "test-environment",
-            "value": 3.379051538362428,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting/test-environment",
-            "value": 0.000019121070000000004,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-3",
-            "value": 2.335098681899999,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-1",
-            "value": 2.3254982542500002,
-            "unit": "seconds"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -49499,6 +49400,105 @@ window.BENCHMARK_DATA = {
           {
             "name": "approval-voting-parallel/approval-voting-parallel-subsystem",
             "value": 0.4424937792800021,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "robertvaneerdewijk@gmail.com",
+            "name": "0xRVE",
+            "username": "0xRVE"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8ab9a68e4f1185685206d581bd018bd7d0d7f051",
+          "message": "Change bahaviour of contract termination in accordance with EIP-6780 (#9699)\n\nfixes https://github.com/paritytech/polkadot-sdk/issues/9621\n\nBehavior of `terminate` is changed in accordance with EIP-6780 (and EVM\nin general):\n- `terminate` only deletes the code from storage if it is called in the\nsame transaction the contract was created.\n- `terminate` does not destroy the contract instantly. The contract is\nregistered for destruction, which happens at the end of the transaction.\n\n---------\n\nSigned-off-by: xermicus <cyrill@parity.io>\nSigned-off-by: Cyrill Leutwiler <bigcyrill@hotmail.com>\nCo-authored-by: Robert van Eerdewijk <robert@Roberts-MacBook-Pro.local>\nCo-authored-by: pgherveou <pgherveou@gmail.com>\nCo-authored-by: Sebastian Miasojed <sebastian.miasojed@parity.io>\nCo-authored-by: Sebastian Miasojed <s.miasojed@gmail.com>\nCo-authored-by: xermicus <cyrill@parity.io>\nCo-authored-by: Cyrill Leutwiler <bigcyrill@hotmail.com>\nCo-authored-by: Alexander Theißen <alex.theissen@me.com>\nCo-authored-by: cmd[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2025-10-24T16:48:13Z",
+          "tree_id": "df6ab0114b29c3a8e616dcf9ed2789cff97753fc",
+          "url": "https://github.com/paritytech/polkadot-sdk/commit/8ab9a68e4f1185685206d581bd018bd7d0d7f051"
+        },
+        "date": 1761329191007,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Received from peers",
+            "value": 52946.40000000001,
+            "unit": "KiB"
+          },
+          {
+            "name": "Sent to peers",
+            "value": 63636.09999999999,
+            "unit": "KiB"
+          },
+          {
+            "name": "approval-voting-parallel",
+            "value": 12.13292053541,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting",
+            "value": 0.00001847702,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-2",
+            "value": 2.4676756151000014,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-distribution",
+            "value": 0.00001878505,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-1",
+            "value": 2.4278704611100013,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-gather-signatures",
+            "value": 0.005893009529999998,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-0",
+            "value": 2.44674734297,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-3",
+            "value": 2.4190051271699993,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-db",
+            "value": 1.9406675531300017,
+            "unit": "seconds"
+          },
+          {
+            "name": "test-environment",
+            "value": 2.790424604240949,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting/test-environment",
+            "value": 0.00001847702,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-distribution/test-environment",
+            "value": 0.00001878505,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-subsystem",
+            "value": 0.42506142639999744,
             "unit": "seconds"
           }
         ]
