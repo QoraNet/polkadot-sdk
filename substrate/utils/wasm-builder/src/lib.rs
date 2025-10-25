@@ -434,11 +434,8 @@ impl RuntimeTarget {
 	fn rustc_target(self, cargo_command: &CargoCommand) -> String {
 		match self {
 			RuntimeTarget::Wasm =>
-				if cargo_command.is_wasm32v1_none_target_available() {
-					"wasm32v1-none".into()
-				} else {
-					"wasm32-unknown-unknown".into()
-				},
+				// PATCHED: Always use wasm32-unknown-unknown for Qora privacy lib compatibility
+				"wasm32-unknown-unknown".into(),
 			RuntimeTarget::Riscv => {
 				let path = polkavm_linker::target_json_32_path().expect("riscv not found");
 				path.into_os_string().into_string().unwrap()
@@ -450,11 +447,8 @@ impl RuntimeTarget {
 	fn rustc_target_dir(self, cargo_command: &CargoCommand) -> &'static str {
 		match self {
 			RuntimeTarget::Wasm =>
-				if cargo_command.is_wasm32v1_none_target_available() {
-					"wasm32v1-none".into()
-				} else {
-					"wasm32-unknown-unknown".into()
-				},
+				// PATCHED: Always use wasm32-unknown-unknown for Qora privacy lib compatibility
+				"wasm32-unknown-unknown",
 			RuntimeTarget::Riscv => "riscv32emac-unknown-none-polkavm",
 		}
 	}
