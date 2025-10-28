@@ -1548,4 +1548,4 @@ zeroize = { opt-level = 3 }
 [patch.crates-io]
 subtle = { git = "https://github.com/QoraNet/subtle.git", branch = "build-std-compatible" }
 num-traits = { version = "0.2", default-features = false }
-getrandom = { version = "0.2", default-features = false, features = ["js"] }
+getrandom = { git = "https://github.com/QoraNet/getrandom.git", branch = "wasm-compatible" }
